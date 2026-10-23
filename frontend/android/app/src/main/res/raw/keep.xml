@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Mantém os ícones do audio_service: eles são referenciados por NOME em
+     runtime (getIdentifier), então o shrinker de recursos os removeria. -->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@drawable/audio_service_*"
+    tools:shrinkMode="safe" />

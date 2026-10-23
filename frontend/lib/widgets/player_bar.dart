@@ -1,5 +1,3 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -24,16 +22,16 @@ class PlayerBar extends StatelessWidget {
         final total = player.duration ?? track.duration;
         final maxMs = total.inMilliseconds <= 0 ? 1 : total.inMilliseconds;
 
-        return ClipRect(
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-            child: Material(
-              color: scheme.surfaceContainerHigh.withValues(alpha: 0.72),
-              child: SafeArea(
-                top: false,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
+        // Barra sólida (sem BackdropFilter): o blur em tempo real re-borrava
+        // o conteúdo a cada frame e travava o scroll da lista.
+        return Material(
+          color: scheme.surfaceContainerHigh,
+          elevation: 8,
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
                     // Só a linha de progresso escuta a posição (ValueListenable),
                     // evitando reconstruir a barra inteira a cada tick.
                     ValueListenableBuilder<Duration>(
@@ -67,6 +65,7 @@ class PlayerBar extends StatelessWidget {
                                   key: ValueKey(track.id),
                                   url: track.coverUrl ?? track.thumbnailUrl,
                                   size: 50,
+                                  trackId: track.id,
                                 ),
                               ),
                             ),
@@ -167,8 +166,6 @@ class PlayerBar extends StatelessWidget {
                   ],
                 ),
               ),
-            ),
-          ),
         );
       },
     );

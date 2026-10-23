@@ -17,6 +17,7 @@ import 'track.dart';
 class OfflineStore {
   Directory? _base;
   final Map<String, Track> _index = {};
+  final List<Track> _catalog = [];
 
   Future<void> init() async {
     if (_base != null) return;
@@ -26,11 +27,40 @@ class OfflineStore {
     await Directory('${base.path}/covers').create(recursive: true);
     _base = base;
     await _loadIndex();
+    await _loadCatalog();
   }
 
   String get _musicDir => '${_base!.path}/music';
   String get _coversDir => '${_base!.path}/covers';
   File get _indexFile => File('${_base!.path}/library.json');
+  File get _catalogFile => File('${_base!.path}/catalog.json');
+
+  /// Catálogo completo (última biblioteca vista no servidor), usado para
+  /// mostrar TODAS as faixas quando offline.
+  List<Track> get catalog => List.unmodifiable(_catalog);
+
+  Future<void> saveCatalog(List<Track> tracks) async {
+    await init();
+    _catalog
+      ..clear()
+      ..addAll(tracks);
+    try {
+      await _catalogFile
+          .writeAsString(jsonEncode(tracks.map((t) => t.toJson()).toList()));
+    } catch (_) {}
+  }
+
+  Future<void> _loadCatalog() async {
+    try {
+      if (!await _catalogFile.exists()) return;
+      final raw = jsonDecode(await _catalogFile.readAsString());
+      if (raw is! List) return;
+      _catalog.clear();
+      for (final item in raw) {
+        if (item is Map<String, dynamic>) _catalog.add(Track.fromJson(item));
+      }
+    } catch (_) {}
+  }
 
   Future<void> _loadIndex() async {
     try {

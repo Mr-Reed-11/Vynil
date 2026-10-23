@@ -38,22 +38,24 @@ class BlurredBackdrop extends StatelessWidget {
             ),
           ),
         ),
-        AnimatedSwitcher(
-          duration: const Duration(milliseconds: 500),
-          child: absolute == null
-              ? const SizedBox.expand(key: ValueKey('no-cover'))
-              : ImageFiltered(
-                  key: ValueKey(absolute),
-                  imageFilter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
-                  child: Image.network(
-                    absolute,
-                    fit: BoxFit.cover,
-                    width: double.infinity,
-                    height: double.infinity,
-                    headers: api.authHeaders.isEmpty ? null : api.authHeaders,
-                    errorBuilder: (_, _, _) => const SizedBox.shrink(),
+        RepaintBoundary(
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 500),
+            child: absolute == null
+                ? const SizedBox.expand(key: ValueKey('no-cover'))
+                : ImageFiltered(
+                    key: ValueKey(absolute),
+                    imageFilter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+                    child: Image.network(
+                      absolute,
+                      fit: BoxFit.cover,
+                      width: double.infinity,
+                      height: double.infinity,
+                      headers: api.authHeaders.isEmpty ? null : api.authHeaders,
+                      errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                    ),
                   ),
-                ),
+          ),
         ),
         DecoratedBox(
           decoration: BoxDecoration(

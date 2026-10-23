@@ -34,9 +34,15 @@ class TrackTile extends StatelessWidget {
     final downloading = context.select<DownloadController, bool>(
       (d) => d.isDownloading(track.id),
     );
+    final offline = context.select<LibraryController, bool>((l) => l.offline);
+    // Sem conexão e não baixada: não dá pra tocar (só mostrar como indisponível).
+    final unavailableOffline =
+        offline && !downloaded && track.status == TrackStatus.ready;
     final busy = track.status.isBusy;
 
-    return Material(
+    return Opacity(
+      opacity: unavailableOffline ? 0.55 : 1.0,
+      child: Material(
       color: isCurrent
           ? scheme.primaryContainer.withValues(alpha: 0.35)
           : scheme.surfaceContainerLow.withValues(alpha: 0.7),
@@ -48,7 +54,10 @@ class TrackTile extends StatelessWidget {
         leading: Stack(
           alignment: Alignment.center,
           children: [
-            CoverArt(url: track.coverUrl ?? track.thumbnailUrl),
+            CoverArt(
+              url: track.coverUrl ?? track.thumbnailUrl,
+              trackId: track.id,
+            ),
             if (busy) ...[
               Positioned.fill(
                 child: DecoratedBox(
@@ -127,7 +136,14 @@ class TrackTile extends StatelessWidget {
                   ),
                 ),
               ),
-            if (track.status == TrackStatus.ready)
+            if (unavailableOffline)
+              IconButton(
+                tooltip: 'Indisponível offline',
+                onPressed: () => _offlineNotice(context),
+                icon: Icon(Icons.cloud_off_rounded,
+                    color: scheme.onSurfaceVariant),
+              )
+            else if (track.status == TrackStatus.ready)
               IconButton.filledTonal(
                 tooltip: isPlaying ? 'Pausar' : 'Reproduzir',
                 onPressed: () => context
@@ -182,6 +198,7 @@ class TrackTile extends StatelessWidget {
           ],
         ),
       ),
+      ),
     );
   }
 
@@ -196,8 +213,23 @@ class TrackTile extends StatelessWidget {
     };
   }
 
+  void _offlineNotice(BuildContext context) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Faixa não baixada — conecte ao servidor ou '
+            'baixe-a para ouvir offline.'),
+      ),
+    );
+  }
+
   void _onTap(BuildContext context) {
+    final offline = context.read<LibraryController>().offline;
+    final downloaded = context.read<DownloadController>().isDownloaded(track.id);
     if (track.status == TrackStatus.ready) {
+      if (offline && !downloaded) {
+        _offlineNotice(context);
+        return;
+      }
       context.read<PlayerController>().playTrack(track, queue: queue);
       return;
     }

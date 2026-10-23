@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'core/theme.dart';
 import 'screens/library_screen.dart';
+import 'widgets/player_error_listener.dart';
 import 'widgets/share_listener.dart';
 import 'widgets/update_gate.dart';
 
@@ -15,7 +16,9 @@ class MusicServerApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: AppTheme.dark,
       home: const UpdateGate(
-        child: ShareListener(child: LibraryScreen()),
+        child: ShareListener(
+          child: PlayerErrorListener(child: LibraryScreen()),
+        ),
       ),
     );
   }

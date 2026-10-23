@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
@@ -12,36 +11,48 @@ import '../data/track.dart';
 /// Modo de reprodução da fila.
 enum PlayMode { sequential, shuffle }
 
-/// Controla o player (just_audio + notificação de mídia) e expõe o estado.
+/// Controla o player (just_audio + notificação de mídia).
 ///
-/// Performance: a POSIÇÃO é publicada via [positionListenable] (ValueNotifier),
-/// NÃO via notifyListeners — assim os ~5 ticks/seg não reconstroem a lista nem
-/// o fundo desfocado. notifyListeners só dispara em troca de faixa, play/pause,
-/// loading e duração (eventos raros).
+/// Usa a FILA NATIVA do just_audio (setAudioSources): isso dá os botões de
+/// avançar/voltar na notificação, auto-avanço e shuffle "de graça", e integra
+/// com o just_audio_background. A posição é publicada via [positionListenable]
+/// (ValueNotifier) para não reconstruir a lista a cada tick.
 class PlayerController extends ChangeNotifier {
   PlayerController(this._api, this._store) {
     _subscriptions.add(
       _player.playerStateStream.listen((state) {
         _playing = state.playing;
-        if (state.processingState == ProcessingState.completed) {
-          _onCompleted();
-        }
         _notify();
       }),
     );
     _subscriptions.add(
-      _player.positionStream.listen((position) {
-        // Só o ValueNotifier — sem notifyListeners.
-        _position.value = position;
-      }),
-    );
-    _subscriptions.add(
-      _player.durationStream.listen((duration) {
-        if (duration != null) {
-          _duration = duration;
+      _player.currentIndexStream.listen((index) {
+        if (index != null && index >= 0 && index < _queue.length) {
+          _current = _queue[index];
           _notify();
         }
       }),
+    );
+    _subscriptions.add(
+      _player.positionStream.listen((p) => _position.value = p),
+    );
+    _subscriptions.add(
+      _player.durationStream.listen((d) {
+        if (d != null) {
+          _duration = d;
+          _notify();
+        }
+      }),
+    );
+    _subscriptions.add(
+      _player.playbackEventStream.listen(
+        (_) {},
+        onError: (Object e, StackTrace st) {
+          _error = _describeError(e);
+          _loading = false;
+          _notify();
+        },
+      ),
     );
   }
 
@@ -49,19 +60,17 @@ class PlayerController extends ChangeNotifier {
   final OfflineStore _store;
   final AudioPlayer _player = AudioPlayer();
   final List<StreamSubscription<dynamic>> _subscriptions = [];
-  final Random _random = Random();
 
   final ValueNotifier<Duration> _position = ValueNotifier(Duration.zero);
   ValueListenable<Duration> get positionListenable => _position;
 
-  Track? _current;
   List<Track> _queue = const [];
-  PlayMode _mode = PlayMode.sequential;
+  Track? _current;
   bool _loading = false;
-  String? _error;
   bool _playing = false;
+  bool _shuffle = false;
+  String? _error;
   Duration? _duration;
-  int _loadToken = 0;
 
   Track? get current => _current;
   bool get isLoading => _loading;
@@ -69,33 +78,57 @@ class PlayerController extends ChangeNotifier {
   String? get error => _error;
   Duration get position => _position.value;
   Duration? get duration => _duration;
-  PlayMode get mode => _mode;
-  bool get isShuffle => _mode == PlayMode.shuffle;
+  bool get isShuffle => _shuffle;
+  PlayMode get mode => _shuffle ? PlayMode.shuffle : PlayMode.sequential;
   bool get hasQueue => _queue.length > 1;
 
-  int get _currentIndex =>
-      _current == null ? -1 : _queue.indexWhere((t) => t.id == _current!.id);
+  bool _playable(Track t) => t.isReady || _store.audioPath(t.id) != null;
 
   Future<void> playTrack(Track track, {List<Track>? queue}) async {
-    if (!track.isReady && _store.audioPath(track.id) == null) {
+    if (!_playable(track)) return;
+
+    final list = (queue ?? [track]).where(_playable).toList(growable: false);
+    final startIndex = list.indexWhere((t) => t.id == track.id);
+    if (startIndex < 0) return;
+
+    // Mesma fila já carregada?
+    final sameQueue = list.length == _queue.length &&
+        List.generate(list.length, (i) => list[i].id == _queue[i].id)
+            .every((x) => x);
+
+    if (sameQueue) {
+      if (_current?.id == track.id) {
+        await toggle();
+        return;
+      }
+      await _player.seek(Duration.zero, index: startIndex);
+      unawaited(_player.play());
       return;
     }
 
-    if (queue != null) {
-      final playable = queue
-          .where((t) => t.isReady || _store.audioPath(t.id) != null)
-          .toList(growable: false);
-      _queue = playable.any((t) => t.id == track.id) ? playable : [track];
-    } else if (!_queue.any((t) => t.id == track.id)) {
-      _queue = [track];
-    }
+    _queue = list;
+    _current = track;
+    _loading = true;
+    _error = null;
+    _position.value = Duration.zero;
+    _duration = track.duration;
+    _notify();
 
-    if (_current?.id == track.id) {
-      await toggle();
-      return;
+    try {
+      await _player.setAudioSources(
+        list.map(_sourceFor).toList(growable: false),
+        initialIndex: startIndex,
+        initialPosition: Duration.zero,
+      );
+      await _player.setShuffleModeEnabled(_shuffle);
+      _loading = false;
+      _notify();
+      unawaited(_player.play());
+    } catch (error) {
+      _error = _describeError(error);
+      _loading = false;
+      _notify();
     }
-
-    await _load(track);
   }
 
   /// Monta o AudioSource preferindo o arquivo local (offline), com o MediaItem
@@ -137,37 +170,10 @@ class PlayerController extends ChangeNotifier {
     );
   }
 
-  Future<void> _load(Track track) async {
-    _current = track;
-    _loading = true;
-    _error = null;
-    _position.value = Duration.zero;
-    _duration = track.duration;
-    final token = ++_loadToken;
-    _notify();
-
-    try {
-      final source = _sourceFor(track);
-      // Para a fonte anterior antes de trocar (senão o áudio antigo continua).
-      await _player.stop();
-      if (token != _loadToken) return;
-      await _player.setAudioSource(source);
-      if (token != _loadToken) return;
-      _loading = false;
-      _notify();
-      unawaited(_player.play());
-    } catch (error) {
-      if (token != _loadToken) return;
-      _error = 'Não foi possível tocar: $error';
-      _loading = false;
-      _notify();
-    }
-  }
-
   Future<void> toggle() async {
     if (_current == null) return;
     if (_player.processingState == ProcessingState.completed) {
-      await _player.seek(Duration.zero);
+      await _player.seek(Duration.zero, index: _player.currentIndex);
       await _player.play();
       return;
     }
@@ -179,55 +185,31 @@ class PlayerController extends ChangeNotifier {
   }
 
   Future<void> next() async {
-    final track = _pick(1);
-    if (track != null) await _load(track);
+    if (_player.hasNext) await _player.seekToNext();
   }
 
   Future<void> previous() async {
+    // Se passou de 3s, "anterior" reinicia a faixa atual.
     if (_position.value > const Duration(seconds: 3)) {
       await _player.seek(Duration.zero);
       return;
     }
-    final track = _pick(-1);
-    if (track != null) await _load(track);
-  }
-
-  Track? _pick(int dir) {
-    if (_queue.isEmpty) return null;
-    if (_queue.length == 1) return _queue.first;
-    final index = _currentIndex;
-    if (_mode == PlayMode.shuffle) {
-      int r;
-      do {
-        r = _random.nextInt(_queue.length);
-      } while (r == index);
-      return _queue[r];
-    }
-    if (index < 0) return _queue.first;
-    final n = (index + dir) % _queue.length;
-    return _queue[(n + _queue.length) % _queue.length];
-  }
-
-  void _onCompleted() {
-    if (_queue.isEmpty || _loading) return;
-    if (_mode == PlayMode.shuffle) {
-      final track = _pick(1);
-      if (track != null) unawaited(_load(track));
-      return;
-    }
-    final index = _currentIndex;
-    if (index >= 0 && index < _queue.length - 1) {
-      unawaited(_load(_queue[index + 1]));
+    if (_player.hasPrevious) {
+      await _player.seekToPrevious();
+    } else {
+      await _player.seek(Duration.zero);
     }
   }
 
-  void setMode(PlayMode mode) {
-    _mode = mode;
+  Future<void> toggleShuffle() async {
+    _shuffle = !_shuffle;
+    if (_shuffle) await _player.shuffle();
+    await _player.setShuffleModeEnabled(_shuffle);
     _notify();
   }
 
-  void toggleShuffle() {
-    setMode(isShuffle ? PlayMode.sequential : PlayMode.shuffle);
+  void setMode(PlayMode mode) {
+    if ((mode == PlayMode.shuffle) != _shuffle) toggleShuffle();
   }
 
   Future<void> seek(Duration position) async {
@@ -243,7 +225,6 @@ class PlayerController extends ChangeNotifier {
   }
 
   Future<void> stop() async {
-    _loadToken++;
     await _player.stop();
     _current = null;
     _queue = const [];
@@ -251,6 +232,16 @@ class PlayerController extends ChangeNotifier {
     _duration = null;
     _error = null;
     _notify();
+  }
+
+  String _describeError(Object e) {
+    if (e is PlayerException) {
+      return 'Erro ao tocar (código ${e.code}): ${e.message ?? e}';
+    }
+    if (e is PlayerInterruptedException) {
+      return 'Reprodução interrompida: ${e.message ?? e}';
+    }
+    return 'Não foi possível tocar: $e';
   }
 
   void _notify() => notifyListeners();

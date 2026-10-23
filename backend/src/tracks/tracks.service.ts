@@ -198,6 +198,18 @@ export class TracksService {
     return this.toResponse(this.repository.findByIdOrFail(id));
   }
 
+  /** Resolve IDs em respostas, preservando a ordem e ignorando ausentes. */
+  resolveResponses(ids: string[]): TrackResponse[] {
+    const result: TrackResponse[] = [];
+    for (const id of ids) {
+      const track = this.repository.findById(id);
+      if (track) {
+        result.push(this.toResponse(track));
+      }
+    }
+    return result;
+  }
+
   /** Usado pelo controller para servir arquivos (capa/audio). */
   getEntity(id: string): Track {
     return this.repository.findByIdOrFail(id);

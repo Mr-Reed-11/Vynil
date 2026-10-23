@@ -116,6 +116,8 @@ class MusicApi {
         _uri('/api/tracks', params),
         headers: authHeaders,
       ),
+      // Timeout curto: offline, cai rápido para o catálogo em cache.
+      timeout: const Duration(seconds: 8),
     );
 
     final data = _handle(response) as Map<String, dynamic>;

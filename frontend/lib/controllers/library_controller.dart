@@ -15,6 +15,7 @@ class LibraryController extends ChangeNotifier {
 
   List<Track> _tracks = const [];
   bool _loading = false;
+  bool _offline = false;
   String? _error;
   String _query = '';
   Timer? _pollTimer;
@@ -23,6 +24,8 @@ class LibraryController extends ChangeNotifier {
 
   List<Track> get tracks => _tracks;
   bool get loading => _loading;
+  /// true quando a lista exibida vem do cache (servidor inacessível).
+  bool get offline => _offline;
   String? get error => _error;
   String get query => _query;
   String get serverUrl => _api.baseUrl;
@@ -46,17 +49,25 @@ class LibraryController extends ChangeNotifier {
       }
       _tracks = tracks;
       _error = null;
+      _offline = false;
+      // Cacheia o catálogo completo para uso offline (só sem busca ativa,
+      // pra não gravar uma lista filtrada como se fosse a biblioteca toda).
+      if (_query.trim().isEmpty) {
+        unawaited(_store?.saveCatalog(tracks) ?? Future.value());
+      }
     } catch (error) {
       if (_disposed) {
         return;
       }
-      // Servidor inacessível: cai para a biblioteca offline (faixas baixadas),
-      // mantendo o app utilizável sem conexão.
-      final offline = _offlineTracks();
-      if (offline.isNotEmpty) {
-        _tracks = offline;
-        _error = 'Offline — mostrando faixas salvas no dispositivo.';
+      // Servidor inacessível: cai para o catálogo em cache (biblioteca toda).
+      // As baixadas tocam; as não baixadas aparecem como indisponíveis offline.
+      final cached = _offlineTracks();
+      if (cached.isNotEmpty) {
+        _tracks = cached;
+        _offline = true;
+        _error = 'Offline — tocando só o que está salvo no dispositivo.';
       } else {
+        _offline = false;
         _error = error.toString();
       }
     } finally {
@@ -101,10 +112,12 @@ class LibraryController extends ChangeNotifier {
   List<Track> _offlineTracks() {
     final store = _store;
     if (store == null) return const [];
+    // Catálogo completo (todas as faixas vistas por último), com fallback para
+    // as baixadas caso ainda não exista catálogo salvo.
+    final all = store.catalog.isNotEmpty ? store.catalog : store.tracks;
     final q = _query.trim().toLowerCase();
-    final tracks = store.tracks;
-    if (q.isEmpty) return tracks;
-    return tracks
+    if (q.isEmpty) return all;
+    return all
         .where((t) =>
             t.title.toLowerCase().contains(q) ||
             t.artist.toLowerCase().contains(q))

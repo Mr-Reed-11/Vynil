@@ -7,6 +7,9 @@ class OfflineStore {
 
   Set<String> get downloadedIds => const {};
   List<Track> get tracks => const [];
+  List<Track> get catalog => const [];
+
+  Future<void> saveCatalog(List<Track> tracks) async {}
 
   bool isDownloaded(String id) => false;
   String? audioPath(String id) => null;

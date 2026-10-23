@@ -80,6 +80,7 @@ class NowPlayingScreen extends StatelessWidget {
                             size: side,
                             radius: 24,
                             elevation: 48,
+                            trackId: track.id,
                           ),
                         ),
                       );

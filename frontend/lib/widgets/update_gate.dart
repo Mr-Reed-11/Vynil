@@ -1,7 +1,10 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 
 import '../controllers/update_controller.dart';
+import '../core/diagnostics.dart';
 
 /// Envolve a home e, na primeira abertura, checa se há atualização.
 /// Se houver, mostra o diálogo uma vez por sessão.
@@ -24,6 +27,29 @@ class _UpdateGateState extends State<UpdateGate> {
   }
 
   Future<void> _check() async {
+    // Android 13+: pede a permissão de notificação (necessária para a
+    // bandeja de mídia aparecer).
+    if (!kIsWeb) {
+      try {
+        await Permission.notification.request();
+      } catch (_) {}
+    }
+
+    if (!mounted) return;
+
+    // Se a notificação de mídia falhou ao iniciar, avisa (o player segue
+    // funcionando sem a bandeja). Ajuda a diagnosticar.
+    if (backgroundInitError != null && mounted) {
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Notificação de mídia indisponível: '
+              '$backgroundInitError'),
+          duration: const Duration(seconds: 10),
+        ),
+      );
+    }
+
     final update = context.read<UpdateController>();
     final hasUpdate = await update.check(silent: true);
     if (!mounted || _prompted || !hasUpdate) return;

@@ -15,6 +15,6 @@ import { YtDlpService } from './ytdlp.service';
     DownloadQueueService,
     TracksService,
   ],
-  exports: [StorageService, YtDlpService],
+  exports: [StorageService, YtDlpService, TracksService],
 })
 export class TracksModule {}

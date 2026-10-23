@@ -2,7 +2,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../controllers/download_controller.dart';
 import '../data/music_api.dart';
+import 'local_image.dart';
 
 /// Resolve a URL de capa para exibição, aplicando a regra do web:
 /// thumbnails do YouTube (ytimg.com) não têm CORS, então no web caem no
@@ -23,6 +25,7 @@ class CoverArt extends StatelessWidget {
     this.loading = false,
     this.heroTag,
     this.elevation = 0,
+    this.trackId,
   });
 
   final String? url;
@@ -32,23 +35,47 @@ class CoverArt extends StatelessWidget {
   final Object? heroTag;
   final double elevation;
 
+  /// Se informado e a faixa estiver baixada, usa a capa LOCAL (funciona
+  /// offline, sem depender do servidor).
+  final String? trackId;
+
   @override
   Widget build(BuildContext context) {
     final api = context.read<MusicApi>();
     final absolute = resolveCoverUrl(context, url);
+    final localProvider = trackId == null
+        ? null
+        : localImage(context.read<DownloadController>().localCoverPath(trackId!));
+
+    // Decodifica a imagem no tamanho de exibição (evita decodificar 1280px
+    // para caber em 50px — grande ganho de memória/fluidez).
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    final cachePx = size.isFinite ? (size * dpr).round() : null;
 
     Widget image = ClipRRect(
       borderRadius: BorderRadius.circular(radius),
       child: SizedBox(
         width: size,
         height: size,
-        child: absolute == null
+        child: localProvider != null
+            ? Image(
+                image: cachePx != null
+                    ? ResizeImage(localProvider,
+                        width: cachePx, height: cachePx)
+                    : localProvider,
+                fit: BoxFit.cover,
+                gaplessPlayback: true,
+                errorBuilder: (_, _, _) => _Placeholder(loading: loading),
+              )
+            : absolute == null
             ? _Placeholder(loading: loading)
             : Image.network(
                 absolute,
                 headers: api.authHeaders.isEmpty ? null : api.authHeaders,
                 fit: BoxFit.cover,
                 gaplessPlayback: true,
+                cacheWidth: cachePx,
+                cacheHeight: cachePx,
                 errorBuilder: (_, _, _) => _Placeholder(loading: loading),
                 frameBuilder: (context, child, frame, wasSync) {
                   if (wasSync) return child;

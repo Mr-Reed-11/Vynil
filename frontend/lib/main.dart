@@ -1,10 +1,12 @@
-import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:just_audio_background/just_audio_background.dart';
+import 'package:just_audio_platform_interface/just_audio_platform_interface.dart';
+import 'package:just_audio_platform_interface/method_channel_just_audio.dart';
 import 'package:provider/provider.dart';
 
 import 'app.dart';
+import 'core/diagnostics.dart';
 import 'controllers/download_controller.dart';
 import 'controllers/library_controller.dart';
 import 'controllers/player_controller.dart';
@@ -25,17 +27,20 @@ Future<void> main() async {
         androidNotificationChannelName: 'Vynil',
         androidNotificationOngoing: true,
       );
-    } catch (error) {
-      debugPrint('Falha ao iniciar a notificação de mídia: $error');
+    } catch (error, stack) {
+      // Se a notificação de mídia falhar ao iniciar, NÃO deixamos a reprodução
+      // quebrar: revertemos o override da plataforma para o player padrão.
+      backgroundInitError = '$error';
+      debugPrint('Falha ao iniciar a notificação de mídia: $error\n$stack');
+      try {
+        JustAudioPlatform.instance = MethodChannelJustAudio();
+      } catch (_) {}
     }
   }
 
-  try {
-    final session = await AudioSession.instance;
-    await session.configure(const AudioSessionConfiguration.music());
-  } catch (error) {
-    debugPrint('Não foi possível configurar a sessão de áudio: $error');
-  }
+  // Obs: NÃO configuramos o AudioSession manualmente — o audio_service (base
+  // do just_audio_background) gerencia a sessão e a media session que aciona
+  // a notificação. Configurar por cima a desfazia (notificação não aparecia).
 
   final api = MusicApi(
     baseUrl: AppConfig.apiBaseUrl,
