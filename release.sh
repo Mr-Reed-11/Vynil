@@ -22,7 +22,9 @@ FRONTEND="$ROOT/frontend"
 BACKEND="$ROOT/backend"
 PUBSPEC="$FRONTEND/pubspec.yaml"
 ENV_FILE="$BACKEND/.env"
-APK_OUT="$FRONTEND/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk"
+# APK universal: versionCode = número do build (sem o +1000*ABI do split),
+# para o updater comparar corretamente.
+APK_OUT="$FRONTEND/build/app/outputs/flutter-apk/app-release.apk"
 RELEASE_DIR="$BACKEND/storage/releases"
 
 # --- Toolchain (mesmos caminhos usados no setup) ---------------------------
@@ -80,7 +82,7 @@ echo "[2/5] Buildando APK (arm64)..."
 DART_DEFINES=()
 [[ -n "$API_BASE_URL" ]] && DART_DEFINES+=(--dart-define=API_BASE_URL="$API_BASE_URL")
 [[ -n "$API_KEY" ]] && DART_DEFINES+=(--dart-define=API_KEY="$API_KEY")
-( cd "$FRONTEND" && flutter build apk --release --split-per-abi "${DART_DEFINES[@]}" )
+( cd "$FRONTEND" && flutter build apk --release "${DART_DEFINES[@]}" )
 [[ -f "$APK_OUT" ]] || { echo "APK não encontrado: $APK_OUT" >&2; exit 1; }
 
 # --- 3. publicar o APK no backend ------------------------------------------
