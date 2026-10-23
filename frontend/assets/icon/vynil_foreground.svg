@@ -1,5 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
-  <!-- V branco centrado na zona segura do ícone adaptativo (fundo transparente). -->
-  <path d="M352 372 L512 676 L672 372" fill="none" stroke="#FFFFFF"
-        stroke-width="104" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Mesmo V caligráfico, reduzido para a zona segura do ícone adaptativo. -->
+  <g transform="translate(512 520) scale(0.78) translate(-505 -500)">
+    <path fill="#FFFFFF" d="
+      M284 338
+      C 300 326, 372 322, 404 360
+      C 440 452, 480 596, 520 690
+      C 528 710, 548 708, 560 686
+      C 614 560, 672 418, 726 322
+      C 742 300, 712 292, 696 312
+      C 640 404, 586 532, 540 636
+      C 528 606, 500 492, 470 388
+      C 452 338, 360 330, 300 352
+      C 292 346, 288 342, 284 338
+      Z"/>
+  </g>
 </svg>

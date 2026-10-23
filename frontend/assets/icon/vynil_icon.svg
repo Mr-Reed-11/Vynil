@@ -1,11 +1,27 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#8A5CFF"/>
-      <stop offset="1" stop-color="#5E34D8"/>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#9B6BFF"/>
+      <stop offset="1" stop-color="#5A2EE0"/>
     </linearGradient>
+    <radialGradient id="glow" cx="0.3" cy="0.25" r="0.9">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.22"/>
+      <stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
   </defs>
   <rect width="1024" height="1024" fill="url(#bg)"/>
-  <path d="M300 298 L512 726 L724 298" fill="none" stroke="#FFFFFF"
-        stroke-width="122" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect width="1024" height="1024" fill="url(#glow)"/>
+  <!-- V caligráfico (traço de pincel, grosso-fino) -->
+  <path fill="#FFFFFF" d="
+    M284 338
+    C 300 326, 372 322, 404 360
+    C 440 452, 480 596, 520 690
+    C 528 710, 548 708, 560 686
+    C 614 560, 672 418, 726 322
+    C 742 300, 712 292, 696 312
+    C 640 404, 586 532, 540 636
+    C 528 606, 500 492, 470 388
+    C 452 338, 360 330, 300 352
+    C 292 346, 288 342, 284 338
+    Z"/>
 </svg>
