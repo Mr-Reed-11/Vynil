@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import 'core/theme.dart';
 import 'screens/library_screen.dart';
+import 'widgets/share_listener.dart';
+import 'widgets/update_gate.dart';
 
 class MusicServerApp extends StatelessWidget {
   const MusicServerApp({super.key});
@@ -12,7 +14,9 @@ class MusicServerApp extends StatelessWidget {
       title: 'Music Server',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.dark,
-      home: const LibraryScreen(),
+      home: const UpdateGate(
+        child: ShareListener(child: LibraryScreen()),
+      ),
     );
   }
 }

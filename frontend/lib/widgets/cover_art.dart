@@ -4,6 +4,16 @@ import 'package:provider/provider.dart';
 
 import '../data/music_api.dart';
 
+/// Resolve a URL de capa para exibição, aplicando a regra do web:
+/// thumbnails do YouTube (ytimg.com) não têm CORS, então no web caem no
+/// placeholder até a capa local do servidor ficar pronta.
+String? resolveCoverUrl(BuildContext context, String? url) {
+  final api = context.read<MusicApi>();
+  final effective =
+      kIsWeb && (url?.contains('ytimg.com') ?? false) ? null : url;
+  return api.absoluteUrl(effective);
+}
+
 class CoverArt extends StatelessWidget {
   const CoverArt({
     super.key,
@@ -11,23 +21,23 @@ class CoverArt extends StatelessWidget {
     this.size = 56,
     this.radius = 12,
     this.loading = false,
+    this.heroTag,
+    this.elevation = 0,
   });
 
   final String? url;
   final double size;
   final double radius;
   final bool loading;
+  final Object? heroTag;
+  final double elevation;
 
   @override
   Widget build(BuildContext context) {
     final api = context.read<MusicApi>();
-    // Thumbnails do YouTube não têm CORS; no web usamos o placeholder até a
-    // capa local ficar pronta no servidor.
-    final effectiveUrl =
-        kIsWeb && (url?.contains('ytimg.com') ?? false) ? null : url;
-    final absolute = api.absoluteUrl(effectiveUrl);
+    final absolute = resolveCoverUrl(context, url);
 
-    return ClipRRect(
+    Widget image = ClipRRect(
       borderRadius: BorderRadius.circular(radius),
       child: SizedBox(
         width: size,
@@ -38,16 +48,46 @@ class CoverArt extends StatelessWidget {
                 absolute,
                 headers: api.authHeaders.isEmpty ? null : api.authHeaders,
                 fit: BoxFit.cover,
+                gaplessPlayback: true,
                 errorBuilder: (_, _, _) => _Placeholder(loading: loading),
+                frameBuilder: (context, child, frame, wasSync) {
+                  if (wasSync) return child;
+                  return AnimatedOpacity(
+                    opacity: frame == null ? 0 : 1,
+                    duration: const Duration(milliseconds: 350),
+                    curve: Curves.easeOut,
+                    child: child,
+                  );
+                },
                 loadingBuilder: (context, child, progress) {
-                  if (progress == null) {
-                    return child;
-                  }
+                  if (progress == null) return child;
                   return const _Placeholder(loading: true);
                 },
               ),
       ),
     );
+
+    if (elevation > 0) {
+      image = DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(radius),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.45),
+              blurRadius: elevation,
+              offset: Offset(0, elevation * 0.35),
+            ),
+          ],
+        ),
+        child: image,
+      );
+    }
+
+    if (heroTag != null) {
+      image = Hero(tag: heroTag!, child: image);
+    }
+
+    return image;
   }
 }
 

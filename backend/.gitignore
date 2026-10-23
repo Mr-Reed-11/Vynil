@@ -9,6 +9,7 @@ dist/
 storage/music/*
 storage/covers/*
 storage/db/*
+storage/releases/*
 !storage/music/.gitkeep
 !storage/covers/.gitkeep
 !storage/db/.gitkeep

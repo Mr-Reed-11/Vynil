@@ -14,9 +14,25 @@ export interface VideoMetadata {
   youtubeId: string;
   title: string;
   artist: string;
+  album: string | null;
   durationSeconds: number;
   thumbnailUrl: string | null;
   webpageUrl: string;
+}
+
+/** Entrada de uma playlist, com metadados mínimos (flat). */
+export interface PlaylistEntry {
+  youtubeId: string;
+  title: string;
+  artist: string;
+  durationSeconds: number;
+  thumbnailUrl: string | null;
+  webpageUrl: string;
+}
+
+export interface PlaylistInfo {
+  title: string;
+  entries: PlaylistEntry[];
 }
 
 export interface DownloadResult {
@@ -110,15 +126,80 @@ export class YtDlpService {
       this.cleanArtist(info.channel) ||
       'Desconhecido';
 
+    const album =
+      typeof info.album === 'string' && info.album.trim()
+        ? info.album.trim()
+        : null;
+
     return {
       youtubeId: String(info.id),
       title: String(info.track || info.title || 'Sem titulo').trim(),
       artist,
+      album,
       durationSeconds: Number.isFinite(duration) ? Math.round(duration) : 0,
       thumbnailUrl: typeof info.thumbnail === 'string' ? info.thumbnail : null,
       webpageUrl:
         typeof info.webpage_url === 'string' ? info.webpage_url : url,
     };
+  }
+
+  /**
+   * Expande uma playlist em modo "flat" (rápido, uma única chamada): não
+   * baixa metadados completos de cada vídeo, apenas id/título/duração/canal.
+   * `max` limita quantos itens retornar.
+   */
+  async probePlaylist(url: string, max: number): Promise<PlaylistInfo> {
+    const { stdout } = await this.exec(
+      [
+        '--dump-single-json',
+        '--flat-playlist',
+        '--no-warnings',
+        '--no-color',
+        '--playlist-end',
+        String(Math.max(1, max)),
+        '--socket-timeout',
+        '30',
+        ...this.cookieArgs(),
+        url,
+      ],
+      120_000,
+    );
+
+    let info: Record<string, any>;
+    try {
+      info = JSON.parse(stdout) as Record<string, any>;
+    } catch {
+      throw new BadGatewayException(
+        'Nao foi possivel interpretar a playlist retornada pelo yt-dlp.',
+      );
+    }
+
+    const rawEntries: any[] = Array.isArray(info.entries) ? info.entries : [];
+    if (rawEntries.length === 0) {
+      throw new BadRequestException(
+        'Nenhum item encontrado. Verifique se o link e de uma playlist publica.',
+      );
+    }
+
+    const entries: PlaylistEntry[] = rawEntries
+      .filter((e) => e && e.id)
+      .map((e) => {
+        const id = String(e.id);
+        const duration = Number(e.duration);
+        return {
+          youtubeId: id,
+          title: String(e.title || 'Sem titulo').trim(),
+          artist:
+            this.cleanArtist(e.channel) ||
+            this.cleanArtist(e.uploader) ||
+            'Desconhecido',
+          durationSeconds: Number.isFinite(duration) ? Math.round(duration) : 0,
+          thumbnailUrl: `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
+          webpageUrl: `https://www.youtube.com/watch?v=${id}`,
+        };
+      });
+
+    return { title: String(info.title || 'Playlist').trim(), entries };
   }
 
   /**

@@ -19,7 +19,7 @@ import { CreateTrackDto } from './dto/create-track.dto';
 import { QueryTracksDto } from './dto/query-tracks.dto';
 import { StorageService } from './storage.service';
 import { Track, TrackListResponse, TrackResponse } from './track.types';
-import { LibraryStats, TracksService } from './tracks.service';
+import { LibraryStats, PlaylistResult, TracksService } from './tracks.service';
 
 const COVER_CONTENT_TYPES: Record<string, string> = {
   '.jpg': 'image/jpeg',
@@ -43,6 +43,11 @@ export class TracksController {
     const { track, created } = await this.tracks.create(dto);
     res.status(created ? HttpStatus.CREATED : HttpStatus.OK);
     return track;
+  }
+
+  @Post('playlist')
+  createPlaylist(@Body() dto: CreateTrackDto): Promise<PlaylistResult> {
+    return this.tracks.createFromPlaylist(dto);
   }
 
   @Get()

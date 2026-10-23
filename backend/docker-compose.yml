@@ -13,6 +13,14 @@ services:
       MAX_DURATION_SECONDS: ${MAX_DURATION_SECONDS:-0}
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
       APP_API_KEY: ${APP_API_KEY:-}
+      MAX_PLAYLIST_ITEMS: ${MAX_PLAYLIST_ITEMS:-100}
+      # Atualizacao in-app (APK sideloaded)
+      APP_LATEST_VERSION: ${APP_LATEST_VERSION:-1.0.0}
+      APP_LATEST_BUILD: ${APP_LATEST_BUILD:-1}
+      APP_APK_FILE: ${APP_APK_FILE:-/data/releases/vynil.apk}
+      APP_APK_URL: ${APP_APK_URL:-}
+      APP_RELEASE_NOTES: ${APP_RELEASE_NOTES:-}
+      APP_UPDATE_MANDATORY: ${APP_UPDATE_MANDATORY:-false}
       # Caminho DENTRO do container, ex.: /data/cookies.txt
       YTDLP_COOKIES_FILE: ${YTDLP_COOKIES_FILE:-}
     volumes:

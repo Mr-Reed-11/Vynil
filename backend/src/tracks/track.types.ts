@@ -9,6 +9,8 @@ export interface Track {
   url: string;
   title: string;
   artist: string;
+  /** Nome do album (tag), quando disponivel nos metadados. */
+  album: string | null;
   durationSeconds: number;
   thumbnailUrl: string | null;
   status: TrackStatus;

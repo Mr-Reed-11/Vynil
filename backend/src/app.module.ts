@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { ApiKeyGuard } from './common/guards/api-key.guard';
+import { AppInfoModule } from './app-info/app-info.module';
 import { HealthModule } from './health/health.module';
 import { TracksModule } from './tracks/tracks.module';
 
@@ -14,6 +15,7 @@ import { TracksModule } from './tracks/tracks.module';
     }),
     TracksModule,
     HealthModule,
+    AppInfoModule,
   ],
   providers: [
     {

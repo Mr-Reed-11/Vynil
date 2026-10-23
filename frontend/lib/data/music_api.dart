@@ -5,6 +5,47 @@ import 'package:http/http.dart' as http;
 
 import 'track.dart';
 
+class AppVersionInfo {
+  AppVersionInfo({
+    required this.version,
+    required this.buildNumber,
+    this.downloadUrl,
+    this.notes,
+    this.mandatory = false,
+  });
+
+  final String version;
+  final int buildNumber;
+  final String? downloadUrl;
+  final String? notes;
+  final bool mandatory;
+
+  factory AppVersionInfo.fromJson(Map<String, dynamic> json) {
+    final notes = (json['notes'] as String?)?.trim();
+    return AppVersionInfo(
+      version: json['version'] as String? ?? '',
+      buildNumber: (json['buildNumber'] as num?)?.toInt() ?? 0,
+      downloadUrl: json['downloadUrl'] as String?,
+      notes: notes != null && notes.isNotEmpty ? notes : null,
+      mandatory: json['mandatory'] == true,
+    );
+  }
+}
+
+class PlaylistResult {
+  PlaylistResult({
+    required this.playlistTitle,
+    required this.total,
+    required this.added,
+    required this.skipped,
+  });
+
+  final String playlistTitle;
+  final int total;
+  final int added;
+  final int skipped;
+}
+
 class ApiException implements Exception {
   ApiException(this.statusCode, this.message);
 
@@ -19,17 +60,39 @@ class ApiException implements Exception {
 class MusicApi {
   MusicApi({
     required String baseUrl,
-    this.apiKey = '',
+    String apiKey = '',
     http.Client? client,
-  })  : baseUrl = baseUrl.replaceAll(RegExp(r'/+$'), ''),
+  })  : baseUrl = _normalizeBase(baseUrl),
+        apiKey = apiKey.trim(),
         _client = client ?? http.Client();
 
-  final String baseUrl;
-  final String apiKey;
+  /// URL do servidor; pode ser alterada em runtime pela tela de configuração.
+  String baseUrl;
+  String apiKey;
   final http.Client _client;
+
+  static String _normalizeBase(String value) =>
+      value.trim().replaceAll(RegExp(r'/+$'), '');
+
+  /// Atualiza servidor/chave em runtime (sem recriar os controllers).
+  void configure({required String baseUrl, required String apiKey}) {
+    this.baseUrl = _normalizeBase(baseUrl);
+    this.apiKey = apiKey.trim();
+  }
 
   Map<String, String> get authHeaders =>
       apiKey.isEmpty ? const {} : {'x-api-key': apiKey};
+
+  /// URL de capa para a notificação de mídia: o carregador de artwork do
+  /// sistema não envia headers, então a API key vai na query (o guard aceita
+  /// ?api_key=...).
+  String? artworkUrl(String? coverUrl) {
+    final absolute = absoluteUrl(coverUrl);
+    if (absolute == null) return null;
+    if (apiKey.isEmpty) return absolute;
+    final sep = absolute.contains('?') ? '&' : '?';
+    return '$absolute${sep}api_key=${Uri.encodeQueryComponent(apiKey)}';
+  }
 
   /// Converte `streamUrl`/`coverUrl` relativos em URL absoluta.
   String? absoluteUrl(String? pathOrUrl) {
@@ -62,6 +125,28 @@ class MusicApi {
         .toList(growable: false);
   }
 
+  Future<PlaylistResult> addPlaylist(String url) async {
+    final response = await _send(
+      () => _client.post(
+        _uri('/api/tracks/playlist'),
+        headers: {
+          ...authHeaders,
+          'content-type': 'application/json',
+        },
+        body: jsonEncode({'url': url}),
+      ),
+      timeout: const Duration(seconds: 180),
+    );
+
+    final data = _handle(response) as Map<String, dynamic>;
+    return PlaylistResult(
+      playlistTitle: data['playlistTitle'] as String? ?? 'Playlist',
+      total: (data['total'] as num?)?.toInt() ?? 0,
+      added: (data['added'] as num?)?.toInt() ?? 0,
+      skipped: (data['skipped'] as num?)?.toInt() ?? 0,
+    );
+  }
+
   Future<Track> addTrack(String url) async {
     final response = await _send(
       () => _client.post(
@@ -86,6 +171,13 @@ class MusicApi {
       ),
     );
     return Track.fromJson(_handle(response) as Map<String, dynamic>);
+  }
+
+  Future<AppVersionInfo> fetchVersion() async {
+    final response = await _send(
+      () => _client.get(_uri('/api/app/version'), headers: authHeaders),
+    );
+    return AppVersionInfo.fromJson(_handle(response) as Map<String, dynamic>);
   }
 
   Future<void> deleteTrack(String id) async {

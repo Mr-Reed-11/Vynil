@@ -11,6 +11,7 @@ export function toTrackResponse(track: Track, publicBaseUrl = ''): TrackResponse
     url: track.url,
     title: track.title,
     artist: track.artist,
+    album: track.album,
     durationSeconds: track.durationSeconds,
     thumbnailUrl: track.thumbnailUrl,
     status: track.status,

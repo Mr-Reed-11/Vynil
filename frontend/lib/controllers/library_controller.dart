@@ -3,13 +3,15 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../data/music_api.dart';
+import '../data/offline_store.dart';
 import '../data/track.dart';
 
 /// Estado da biblioteca: lista, busca, polling de downloads e ações.
 class LibraryController extends ChangeNotifier {
-  LibraryController(this._api);
+  LibraryController(this._api, [this._store]);
 
   final MusicApi _api;
+  final OfflineStore? _store;
 
   List<Track> _tracks = const [];
   bool _loading = false;
@@ -48,7 +50,15 @@ class LibraryController extends ChangeNotifier {
       if (_disposed) {
         return;
       }
-      _error = error.toString();
+      // Servidor inacessível: cai para a biblioteca offline (faixas baixadas),
+      // mantendo o app utilizável sem conexão.
+      final offline = _offlineTracks();
+      if (offline.isNotEmpty) {
+        _tracks = offline;
+        _error = 'Offline — mostrando faixas salvas no dispositivo.';
+      } else {
+        _error = error.toString();
+      }
     } finally {
       if (!_disposed) {
         _loading = false;
@@ -72,6 +82,12 @@ class LibraryController extends ChangeNotifier {
     return track;
   }
 
+  Future<PlaylistResult> addPlaylist(String url) async {
+    final result = await _api.addPlaylist(url);
+    await load(silent: true);
+    return result;
+  }
+
   Future<void> retry(Track track) async {
     await _api.retryTrack(track.id);
     await load(silent: true);
@@ -80,6 +96,19 @@ class LibraryController extends ChangeNotifier {
   Future<void> remove(Track track) async {
     await _api.deleteTrack(track.id);
     await load(silent: true);
+  }
+
+  List<Track> _offlineTracks() {
+    final store = _store;
+    if (store == null) return const [];
+    final q = _query.trim().toLowerCase();
+    final tracks = store.tracks;
+    if (q.isEmpty) return tracks;
+    return tracks
+        .where((t) =>
+            t.title.toLowerCase().contains(q) ||
+            t.artist.toLowerCase().contains(q))
+        .toList(growable: false);
   }
 
   void _schedulePoll() {

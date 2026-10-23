@@ -1,31 +1,45 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../controllers/download_controller.dart';
 import '../controllers/library_controller.dart';
 import '../controllers/player_controller.dart';
 import '../core/format.dart';
 import '../data/track.dart';
 import 'cover_art.dart';
 
-enum _TrackAction { play, retry, delete }
+enum _TrackAction { play, retry, delete, download, removeDownload }
 
 class TrackTile extends StatelessWidget {
-  const TrackTile({super.key, required this.track});
+  const TrackTile({super.key, required this.track, this.queue});
 
   final Track track;
+
+  /// Lista visível à qual esta faixa pertence; vira a fila do player.
+  final List<Track>? queue;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final player = context.watch<PlayerController>();
-    final isCurrent = player.current?.id == track.id;
-    final isPlaying = isCurrent && player.isPlaying;
+    // `select` evita reconstruir TODA a lista a cada mudança de player.
+    final isCurrent = context.select<PlayerController, bool>(
+      (p) => p.current?.id == track.id,
+    );
+    final isPlaying = context.select<PlayerController, bool>(
+      (p) => p.current?.id == track.id && p.isPlaying,
+    );
+    final downloaded = context.select<DownloadController, bool>(
+      (d) => d.isDownloaded(track.id),
+    );
+    final downloading = context.select<DownloadController, bool>(
+      (d) => d.isDownloading(track.id),
+    );
     final busy = track.status.isBusy;
 
     return Material(
       color: isCurrent
           ? scheme.primaryContainer.withValues(alpha: 0.35)
-          : scheme.surfaceContainerLow,
+          : scheme.surfaceContainerLow.withValues(alpha: 0.7),
       borderRadius: BorderRadius.circular(14),
       clipBehavior: Clip.antiAlias,
       child: ListTile(
@@ -81,11 +95,44 @@ class TrackTile extends StatelessWidget {
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (downloading)
+              Padding(
+                padding: const EdgeInsets.only(right: 4),
+                child: SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: Builder(
+                    builder: (context) {
+                      final p = context.select<DownloadController, double>(
+                        (d) => d.progressOf(track.id),
+                      );
+                      return CircularProgressIndicator(
+                        strokeWidth: 2,
+                        value: p > 0 ? p : null,
+                        color: scheme.primary,
+                      );
+                    },
+                  ),
+                ),
+              )
+            else if (downloaded)
+              Padding(
+                padding: const EdgeInsets.only(right: 4),
+                child: Tooltip(
+                  message: 'Salvo no dispositivo',
+                  child: Icon(
+                    Icons.download_done_rounded,
+                    size: 20,
+                    color: scheme.primary,
+                  ),
+                ),
+              ),
             if (track.status == TrackStatus.ready)
               IconButton.filledTonal(
                 tooltip: isPlaying ? 'Pausar' : 'Reproduzir',
-                onPressed: () =>
-                    context.read<PlayerController>().playTrack(track),
+                onPressed: () => context
+                    .read<PlayerController>()
+                    .playTrack(track, queue: queue),
                 icon: Icon(
                   isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
                 ),
@@ -99,22 +146,38 @@ class TrackTile extends StatelessWidget {
             PopupMenuButton<_TrackAction>(
               tooltip: 'Opções',
               onSelected: (action) => _handleAction(context, action),
-              itemBuilder: (_) => [
-                if (track.status == TrackStatus.ready)
+              itemBuilder: (menuContext) {
+                final downloads = menuContext.read<DownloadController>();
+                return [
+                  if (track.status == TrackStatus.ready)
+                    const PopupMenuItem(
+                      value: _TrackAction.play,
+                      child: Text('Reproduzir'),
+                    ),
+                  if (track.status == TrackStatus.error)
+                    const PopupMenuItem(
+                      value: _TrackAction.retry,
+                      child: Text('Tentar novamente'),
+                    ),
+                  if (track.status == TrackStatus.ready &&
+                      downloads.supported &&
+                      !downloaded &&
+                      !downloading)
+                    const PopupMenuItem(
+                      value: _TrackAction.download,
+                      child: Text('Baixar no dispositivo'),
+                    ),
+                  if (downloaded)
+                    const PopupMenuItem(
+                      value: _TrackAction.removeDownload,
+                      child: Text('Remover download'),
+                    ),
                   const PopupMenuItem(
-                    value: _TrackAction.play,
-                    child: Text('Reproduzir'),
+                    value: _TrackAction.delete,
+                    child: Text('Excluir'),
                   ),
-                if (track.status == TrackStatus.error)
-                  const PopupMenuItem(
-                    value: _TrackAction.retry,
-                    child: Text('Tentar novamente'),
-                  ),
-                const PopupMenuItem(
-                  value: _TrackAction.delete,
-                  child: Text('Excluir'),
-                ),
-              ],
+                ];
+              },
             ),
           ],
         ),
@@ -135,7 +198,7 @@ class TrackTile extends StatelessWidget {
 
   void _onTap(BuildContext context) {
     if (track.status == TrackStatus.ready) {
-      context.read<PlayerController>().playTrack(track);
+      context.read<PlayerController>().playTrack(track, queue: queue);
       return;
     }
     if (track.status == TrackStatus.error) {
@@ -155,11 +218,30 @@ class TrackTile extends StatelessWidget {
   Future<void> _handleAction(BuildContext context, _TrackAction action) async {
     switch (action) {
       case _TrackAction.play:
-        await context.read<PlayerController>().playTrack(track);
+        await context
+            .read<PlayerController>()
+            .playTrack(track, queue: queue);
       case _TrackAction.retry:
         await _retry(context);
       case _TrackAction.delete:
         await _delete(context);
+      case _TrackAction.download:
+        await _download(context);
+      case _TrackAction.removeDownload:
+        await context.read<DownloadController>().remove(track.id);
+    }
+  }
+
+  Future<void> _download(BuildContext context) async {
+    final downloads = context.read<DownloadController>();
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await downloads.download(track);
+      messenger.showSnackBar(
+        SnackBar(content: Text('"${track.title}" salva no dispositivo.')),
+      );
+    } catch (error) {
+      messenger.showSnackBar(SnackBar(content: Text(error.toString())));
     }
   }
 

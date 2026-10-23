@@ -25,7 +25,9 @@ export class ApiKeyGuard implements CanActivate {
     }
 
     const request = context.switchToHttp().getRequest<Request>();
-    if (request.path === '/api/health') {
+    // Endpoints publicos: health e a checagem de versao do app (para o
+    // mecanismo de atualizacao funcionar mesmo sem chave configurada).
+    if (request.path === '/api/health' || request.path === '/api/app/version') {
       return true;
     }
 

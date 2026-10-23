@@ -35,6 +35,7 @@ class Track {
     required this.durationSeconds,
     required this.status,
     required this.progress,
+    this.album,
     this.thumbnailUrl,
     this.error,
     this.sizeBytes,
@@ -49,6 +50,7 @@ class Track {
   final String title;
   final String artist;
   final int durationSeconds;
+  final String? album;
   final String? thumbnailUrl;
   final TrackStatus status;
   final double progress;
@@ -62,6 +64,24 @@ class Track {
 
   Duration get duration => Duration(seconds: durationSeconds);
 
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'youtubeId': youtubeId,
+        'url': url,
+        'title': title,
+        'artist': artist,
+        'album': album,
+        'durationSeconds': durationSeconds,
+        'thumbnailUrl': thumbnailUrl,
+        'status': status.name,
+        'progress': progress,
+        'error': error,
+        'sizeBytes': sizeBytes,
+        'streamUrl': streamUrl,
+        'downloadUrl': downloadUrl,
+        'coverUrl': coverUrl,
+      };
+
   factory Track.fromJson(Map<String, dynamic> json) {
     return Track(
       id: json['id'] as String,
@@ -70,6 +90,9 @@ class Track {
       title: json['title'] as String? ?? 'Sem título',
       artist: json['artist'] as String? ?? 'Desconhecido',
       durationSeconds: (json['durationSeconds'] as num?)?.toInt() ?? 0,
+      album: (json['album'] as String?)?.trim().isNotEmpty == true
+          ? (json['album'] as String).trim()
+          : null,
       thumbnailUrl: json['thumbnailUrl'] as String?,
       status: TrackStatus.fromString(json['status'] as String?),
       progress: (json['progress'] as num?)?.toDouble() ?? 0,

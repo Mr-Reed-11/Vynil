@@ -35,6 +35,14 @@ export interface LibraryStats {
   storageDir: string;
 }
 
+export interface PlaylistResult {
+  playlistTitle: string;
+  total: number;
+  added: number;
+  skipped: number;
+  items: TrackResponse[];
+}
+
 @Injectable()
 export class TracksService {
   private readonly logger = new Logger(TracksService.name);
@@ -76,6 +84,7 @@ export class TracksService {
           url: metadata.webpageUrl,
           title: metadata.title,
           artist: metadata.artist,
+          album: metadata.album,
           durationSeconds: metadata.durationSeconds,
           thumbnailUrl: metadata.thumbnailUrl,
           status: 'queued',
@@ -95,6 +104,7 @@ export class TracksService {
       url: metadata.webpageUrl,
       title: metadata.title,
       artist: metadata.artist,
+      album: metadata.album,
       durationSeconds: metadata.durationSeconds,
       thumbnailUrl: metadata.thumbnailUrl,
       status: 'queued',
@@ -110,6 +120,62 @@ export class TracksService {
     this.logger.log(`Faixa enfileirada: ${track.artist} - ${track.title}`);
 
     return { track: this.toResponse(track), created: true };
+  }
+
+  /**
+   * Expande uma playlist e enfileira as faixas que ainda nao existem.
+   * Idempotente por youtubeId: itens ja presentes sao contados como ignorados.
+   */
+  async createFromPlaylist(dto: CreateTrackDto): Promise<PlaylistResult> {
+    const url = this.normalizeUrl(dto.url);
+    const max =
+      Number(this.config.get<string>('MAX_PLAYLIST_ITEMS', '100')) || 100;
+    const info = await this.ytdlp.probePlaylist(url, max);
+
+    const items: TrackResponse[] = [];
+    let added = 0;
+    let skipped = 0;
+
+    for (const entry of info.entries) {
+      const existing = this.repository.findByYoutubeId(entry.youtubeId);
+      if (existing) {
+        skipped += 1;
+        items.push(this.toResponse(existing));
+        continue;
+      }
+
+      const track = this.repository.create({
+        youtubeId: entry.youtubeId,
+        url: entry.webpageUrl,
+        title: entry.title,
+        artist: entry.artist,
+        album: info.title,
+        durationSeconds: entry.durationSeconds,
+        thumbnailUrl: entry.thumbnailUrl,
+        status: 'queued',
+        progress: 0,
+        error: null,
+        fileName: null,
+        coverFileName: null,
+        sizeBytes: null,
+        downloadedAt: null,
+      });
+      this.queue.enqueue(track.id);
+      items.push(this.toResponse(track));
+      added += 1;
+    }
+
+    this.logger.log(
+      `Playlist "${info.title}": ${added} adicionada(s), ${skipped} ja existiam.`,
+    );
+
+    return {
+      playlistTitle: info.title,
+      total: info.entries.length,
+      added,
+      skipped,
+      items,
+    };
   }
 
   list(query: QueryTracksDto): TrackListResponse {

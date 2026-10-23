@@ -22,6 +22,16 @@ class _AddTrackSheetState extends State<AddTrackSheet> {
     super.dispose();
   }
 
+  /// Playlist "pura": link /playlist?list=... ou com list= e sem vídeo (v=).
+  /// `watch?v=X&list=Y` é tratado como vídeo único.
+  bool _looksLikePlaylist(String url) {
+    final uri = Uri.tryParse(url);
+    if (uri == null) return false;
+    final hasList = uri.queryParameters.containsKey('list');
+    final hasVideo = uri.queryParameters.containsKey('v');
+    return hasList && (uri.path.contains('playlist') || !hasVideo);
+  }
+
   Future<void> _submit() async {
     final url = _controller.text.trim();
     if (url.isEmpty) {
@@ -37,11 +47,20 @@ class _AddTrackSheetState extends State<AddTrackSheet> {
     });
 
     try {
-      final track = await library.add(url);
+      final String message;
+      if (_looksLikePlaylist(url)) {
+        final r = await library.addPlaylist(url);
+        final extra = r.skipped > 0 ? ' (${r.skipped} já existiam)' : '';
+        message = 'Playlist "${r.playlistTitle}": '
+            '${r.added} adicionada(s)$extra.';
+      } else {
+        final track = await library.add(url);
+        message = '"${track.title}" adicionada à fila.';
+      }
       if (!mounted) {
         return;
       }
-      Navigator.of(context).pop(track.title);
+      Navigator.of(context).pop(message);
     } catch (error) {
       if (!mounted) {
         return;
@@ -91,7 +110,8 @@ class _AddTrackSheetState extends State<AddTrackSheet> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Cole um link do YouTube. O servidor baixa o áudio e a capa.',
+              'Cole um link do YouTube — vídeo ou playlist. O servidor baixa '
+              'o áudio e a capa.',
               style: TextStyle(color: scheme.onSurfaceVariant),
             ),
             const SizedBox(height: 16),
