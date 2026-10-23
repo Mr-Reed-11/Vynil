@@ -22,9 +22,10 @@ FRONTEND="$ROOT/frontend"
 BACKEND="$ROOT/backend"
 PUBSPEC="$FRONTEND/pubspec.yaml"
 ENV_FILE="$BACKEND/.env"
-# APK universal: versionCode = número do build (sem o +1000*ABI do split),
-# para o updater comparar corretamente.
-APK_OUT="$FRONTEND/build/app/outputs/flutter-apk/app-release.apk"
+# APK arm64 (leve, ~20MB). O split infla o versionCode (+1000*ABI), então o
+# APP_LATEST_BUILD anunciado é o versionCode REAL lido do APK (via aapt2),
+# garantindo que a comparação do updater sempre bata.
+APK_OUT="$FRONTEND/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk"
 RELEASE_DIR="$BACKEND/storage/releases"
 
 # --- Toolchain (mesmos caminhos usados no setup) ---------------------------
@@ -82,8 +83,15 @@ echo "[2/5] Buildando APK (arm64)..."
 DART_DEFINES=()
 [[ -n "$API_BASE_URL" ]] && DART_DEFINES+=(--dart-define=API_BASE_URL="$API_BASE_URL")
 [[ -n "$API_KEY" ]] && DART_DEFINES+=(--dart-define=API_KEY="$API_KEY")
-( cd "$FRONTEND" && flutter build apk --release "${DART_DEFINES[@]}" )
+( cd "$FRONTEND" && flutter build apk --release --split-per-abi "${DART_DEFINES[@]}" )
 [[ -f "$APK_OUT" ]] || { echo "APK não encontrado: $APK_OUT" >&2; exit 1; }
+
+# versionCode real do APK (o updater compara contra ele).
+AAPT2="$(ls "$ANDROID_SDK_ROOT"/build-tools/*/aapt2 2>/dev/null | sort | tail -1)"
+VERSION_CODE="$("$AAPT2" dump badging "$APK_OUT" 2>/dev/null \
+  | grep -oE "versionCode='[0-9]+'" | grep -oE '[0-9]+' | head -1)"
+[[ -n "$VERSION_CODE" ]] || { echo "Não foi possível ler o versionCode do APK." >&2; exit 1; }
+echo "    versionCode do APK: $VERSION_CODE"
 
 # --- 3. publicar o APK no backend ------------------------------------------
 mkdir -p "$RELEASE_DIR"
@@ -103,7 +111,7 @@ set_env() {
   mv "$tmp" "$ENV_FILE"
 }
 set_env APP_LATEST_VERSION "$VERSION"
-set_env APP_LATEST_BUILD "$BUILD"
+set_env APP_LATEST_BUILD "$VERSION_CODE"
 set_env APP_RELEASE_NOTES "$NOTES"
 echo "[4/5] backend/.env atualizado (APP_LATEST_VERSION/BUILD/NOTES)"
 
