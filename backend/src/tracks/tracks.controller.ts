@@ -15,6 +15,7 @@ import {
 import type { Request, Response } from 'express';
 import { createReadStream } from 'node:fs';
 import { extname } from 'node:path';
+import { AuthUser, CurrentUser } from '../auth/current-user.decorator';
 import { CreateTrackDto } from './dto/create-track.dto';
 import { QueryTracksDto } from './dto/query-tracks.dto';
 import { StorageService } from './storage.service';
@@ -37,52 +38,63 @@ export class TracksController {
 
   @Post()
   async create(
+    @CurrentUser() user: AuthUser,
     @Body() dto: CreateTrackDto,
     @Res({ passthrough: true }) res: Response,
   ): Promise<TrackResponse> {
-    const { track, created } = await this.tracks.create(dto);
+    const { track, created } = await this.tracks.create(user.userId, dto);
     res.status(created ? HttpStatus.CREATED : HttpStatus.OK);
     return track;
   }
 
   @Post('playlist')
-  createPlaylist(@Body() dto: CreateTrackDto): Promise<PlaylistResult> {
-    return this.tracks.createFromPlaylist(dto);
+  createPlaylist(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: CreateTrackDto,
+  ): Promise<PlaylistResult> {
+    return this.tracks.createFromPlaylist(user.userId, dto);
   }
 
   @Get()
-  list(@Query() query: QueryTracksDto): TrackListResponse {
-    return this.tracks.list(query);
+  list(
+    @CurrentUser() user: AuthUser,
+    @Query() query: QueryTracksDto,
+  ): TrackListResponse {
+    return this.tracks.list(user.userId, query);
   }
 
   @Get('stats')
-  stats(): LibraryStats {
-    return this.tracks.stats();
+  stats(@CurrentUser() user: AuthUser): LibraryStats {
+    return this.tracks.stats(user.userId);
   }
 
   @Get(':id')
-  get(@Param('id') id: string): TrackResponse {
-    return this.tracks.get(id);
+  get(@CurrentUser() user: AuthUser, @Param('id') id: string): TrackResponse {
+    return this.tracks.get(user.userId, id);
   }
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async remove(@Param('id') id: string): Promise<void> {
-    await this.tracks.remove(id);
+  async remove(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+  ): Promise<void> {
+    await this.tracks.remove(user.userId, id);
   }
 
   @Post(':id/retry')
-  retry(@Param('id') id: string): TrackResponse {
-    return this.tracks.retry(id);
+  retry(@CurrentUser() user: AuthUser, @Param('id') id: string): TrackResponse {
+    return this.tracks.retry(user.userId, id);
   }
 
   @Get(':id/stream')
   async stream(
+    @CurrentUser() user: AuthUser,
     @Param('id') id: string,
     @Req() req: Request,
     @Res() res: Response,
   ): Promise<void> {
-    const track = this.tracks.getReadyTrack(id);
+    const track = this.tracks.getReadyTrack(user.userId, id);
     const filePath = this.storage.musicPath(track.fileName as string);
 
     let size: number;
@@ -137,11 +149,12 @@ export class TracksController {
 
   @Get(':id/cover')
   async cover(
+    @CurrentUser() user: AuthUser,
     @Param('id') id: string,
     @Req() req: Request,
     @Res() res: Response,
   ): Promise<void> {
-    const track = this.tracks.getEntity(id);
+    const track = this.tracks.getEntity(user.userId, id);
     if (!track.coverFileName) {
       throw new NotFoundException('Esta faixa nao possui capa.');
     }

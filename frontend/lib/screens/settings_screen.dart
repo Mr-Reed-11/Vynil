@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../controllers/auth_controller.dart';
 import '../controllers/library_controller.dart';
-import '../controllers/settings_controller.dart';
 import '../controllers/update_controller.dart';
 import '../core/theme.dart';
 import '../widgets/update_gate.dart';
+import 'auth_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -16,31 +17,29 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   late final TextEditingController _url;
-  late final TextEditingController _apiKey;
   bool _saving = false;
 
   @override
   void initState() {
     super.initState();
-    final settings = context.read<SettingsController>();
-    _url = TextEditingController(text: settings.serverUrl);
-    _apiKey = TextEditingController(text: settings.apiKey);
+    _url = TextEditingController(
+      text: context.read<AuthController>().serverUrl,
+    );
   }
 
   @override
   void dispose() {
     _url.dispose();
-    _apiKey.dispose();
     super.dispose();
   }
 
   Future<void> _save() async {
     final messenger = ScaffoldMessenger.of(context);
-    final settings = context.read<SettingsController>();
+    final auth = context.read<AuthController>();
     final library = context.read<LibraryController>();
     setState(() => _saving = true);
 
-    await settings.save(serverUrl: _url.text, apiKey: _apiKey.text);
+    await auth.setServerUrl(_url.text);
     await library.load();
 
     if (!mounted) return;
@@ -92,16 +91,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       prefixIcon: Icon(Icons.dns_rounded),
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: _apiKey,
-                    enabled: !_saving,
-                    decoration: const InputDecoration(
-                      labelText: 'API key (opcional)',
-                      hintText: 'deixe vazio se o servidor não exige',
-                      prefixIcon: Icon(Icons.key_rounded),
-                    ),
-                  ),
                   const SizedBox(height: 24),
                   FilledButton.icon(
                     onPressed: _saving ? null : _save,
@@ -117,6 +106,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   const SizedBox(height: 32),
                   const Divider(),
                   const SizedBox(height: 16),
+                  const _AccountSection(),
+                  const SizedBox(height: 32),
+                  const Divider(),
+                  const SizedBox(height: 16),
                   Text('Versão',
                       style: Theme.of(context).textTheme.titleMedium),
                   const SizedBox(height: 8),
@@ -127,6 +120,41 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _AccountSection extends StatelessWidget {
+  const _AccountSection();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final auth = context.watch<AuthController>();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Conta', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 8),
+        Text(
+          'Sessão de: ${auth.username.isEmpty ? 'usuário' : auth.username}',
+          style: TextStyle(color: scheme.onSurfaceVariant),
+        ),
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          onPressed: () async {
+            final navigator = Navigator.of(context);
+            await auth.logout();
+            navigator.pushAndRemoveUntil(
+              MaterialPageRoute(builder: (_) => const AuthScreen()),
+              (_) => false,
+            );
+          },
+          icon: const Icon(Icons.logout_rounded),
+          label: const Text('Sair'),
+        ),
+      ],
     );
   }
 }

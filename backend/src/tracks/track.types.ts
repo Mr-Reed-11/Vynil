@@ -3,6 +3,8 @@ export type TrackStatus = 'queued' | 'downloading' | 'ready' | 'error';
 export interface Track {
   /** Identificador interno (UUID). */
   id: string;
+  /** Dono da faixa (usuario). */
+  userId: string;
   /** ID do video no YouTube. */
   youtubeId: string;
   /** URL original compartilhada pelo usuario. */
@@ -29,7 +31,7 @@ export interface Track {
 
 /** Track enriquecida com URLs prontas para o player. */
 export interface TrackResponse
-  extends Omit<Track, 'fileName' | 'coverFileName'> {
+  extends Omit<Track, 'fileName' | 'coverFileName' | 'userId'> {
   streamUrl: string | null;
   downloadUrl: string | null;
   coverUrl: string | null;

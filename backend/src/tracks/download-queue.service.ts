@@ -37,10 +37,11 @@ export class DownloadQueueService implements OnModuleInit {
   async onModuleInit(): Promise<void> {
     await this.repository.ready();
 
-    const { items } = this.repository.findAll({ limit: Number.MAX_SAFE_INTEGER, offset: 0 });
-    const resumable = items.filter(
-      (track) => track.status === 'queued' || track.status === 'downloading',
-    );
+    const resumable = this.repository
+      .all()
+      .filter(
+        (track) => track.status === 'queued' || track.status === 'downloading',
+      );
 
     for (const track of resumable) {
       if (track.status === 'downloading') {
@@ -101,7 +102,7 @@ export class DownloadQueueService implements OnModuleInit {
     try {
       const result = await this.ytdlp.download(
         track.url,
-        track.youtubeId,
+        track.id,
         (percent) => {
           const now = Date.now();
           if (

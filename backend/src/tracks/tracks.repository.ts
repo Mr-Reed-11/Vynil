@@ -10,6 +10,7 @@ interface DatabaseFile {
 }
 
 export interface TrackFilters {
+  userId: string;
   status?: TrackStatus;
   query?: string;
   limit: number;
@@ -70,6 +71,7 @@ export class TracksRepository implements OnModuleInit {
     const query = filters.query?.trim().toLowerCase();
 
     const filtered = [...this.tracks.values()]
+      .filter((track) => track.userId === filters.userId)
       .filter((track) => !filters.status || track.status === filters.status)
       .filter((track) => {
         if (!query) {
@@ -88,6 +90,11 @@ export class TracksRepository implements OnModuleInit {
     };
   }
 
+  /** Todas as faixas, de todos os usuarios (usado pela fila ao retomar). */
+  all(): Track[] {
+    return [...this.tracks.values()];
+  }
+
   findById(id: string): Track | undefined {
     return this.tracks.get(id);
   }
@@ -100,16 +107,16 @@ export class TracksRepository implements OnModuleInit {
     return track;
   }
 
-  findByYoutubeId(youtubeId: string): Track | undefined {
+  findByYoutubeId(userId: string, youtubeId: string): Track | undefined {
     for (const track of this.tracks.values()) {
-      if (track.youtubeId === youtubeId) {
+      if (track.userId === userId && track.youtubeId === youtubeId) {
         return track;
       }
     }
     return undefined;
   }
 
-  countByStatus(): Record<TrackStatus, number> {
+  countByStatus(userId: string): Record<TrackStatus, number> {
     const counts: Record<TrackStatus, number> = {
       queued: 0,
       downloading: 0,
@@ -117,15 +124,19 @@ export class TracksRepository implements OnModuleInit {
       error: 0,
     };
     for (const track of this.tracks.values()) {
-      counts[track.status] += 1;
+      if (track.userId === userId) {
+        counts[track.status] += 1;
+      }
     }
     return counts;
   }
 
-  totalSizeBytes(): number {
+  totalSizeBytes(userId: string): number {
     let total = 0;
     for (const track of this.tracks.values()) {
-      total += track.sizeBytes ?? 0;
+      if (track.userId === userId) {
+        total += track.sizeBytes ?? 0;
+      }
     }
     return total;
   }

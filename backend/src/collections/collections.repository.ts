@@ -56,28 +56,25 @@ export class CollectionsRepository implements OnModuleInit {
     }
   }
 
-  findAll(): Collection[] {
-    return [...this.collections.values()].sort((a, b) =>
-      b.updatedAt.localeCompare(a.updatedAt),
-    );
+  findAll(userId: string): Collection[] {
+    return [...this.collections.values()]
+      .filter((c) => c.userId === userId)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }
 
-  findById(id: string): Collection | undefined {
-    return this.collections.get(id);
-  }
-
-  findByIdOrFail(id: string): Collection {
-    const c = this.findById(id);
-    if (!c) {
+  findByIdOrFail(userId: string, id: string): Collection {
+    const c = this.collections.get(id);
+    if (!c || c.userId !== userId) {
       throw new NotFoundException(`Playlist ${id} nao encontrada.`);
     }
     return c;
   }
 
-  create(name: string, trackIds: string[]): Collection {
+  create(userId: string, name: string, trackIds: string[]): Collection {
     const now = new Date().toISOString();
     const collection: Collection = {
       id: randomUUID(),
+      userId,
       name,
       trackIds: [...new Set(trackIds)],
       createdAt: now,
@@ -89,10 +86,11 @@ export class CollectionsRepository implements OnModuleInit {
   }
 
   update(
+    userId: string,
     id: string,
     patch: Partial<Pick<Collection, 'name' | 'trackIds'>>,
   ): Collection {
-    const current = this.findByIdOrFail(id);
+    const current = this.findByIdOrFail(userId, id);
     const updated: Collection = {
       ...current,
       ...patch,
@@ -104,8 +102,8 @@ export class CollectionsRepository implements OnModuleInit {
     return updated;
   }
 
-  delete(id: string): void {
-    this.findByIdOrFail(id);
+  delete(userId: string, id: string): void {
+    this.findByIdOrFail(userId, id);
     this.collections.delete(id);
     void this.persist();
   }

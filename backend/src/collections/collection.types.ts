@@ -3,6 +3,7 @@ import { TrackResponse } from '../tracks/track.types';
 /** Playlist/colecao manual criada pelo usuario. */
 export interface Collection {
   id: string;
+  userId: string;
   name: string;
   /** IDs das faixas, na ordem. */
   trackIds: string[];

@@ -32,8 +32,8 @@ ssh "${SSH_OPTS[@]}" "$SERVER" \
   "cd ~/Vynil/backend && sed -i 's/^APP_LATEST_VERSION=.*/APP_LATEST_VERSION=$VN/; s/^APP_LATEST_BUILD=.*/APP_LATEST_BUILD=$VC/' .env"
 echo "   .env atualizado."
 
-echo "→ [3/3] Reiniciando backend..."
+echo "→ [3/3] Atualizando código + backend no servidor..."
 ssh "${SSH_OPTS[@]}" "$SERVER" \
-  "cd ~/Vynil/backend && docker compose up -d && echo '   servidor atualizado' && curl -s http://localhost:3000/api/app/version; echo"
+  "cd ~/Vynil && git pull --ff-only 2>/dev/null; cd backend && docker compose up -d --build && echo '   servidor atualizado' && curl -s http://localhost:3000/api/app/version; echo"
 
 echo "Pronto. No app: Configurações -> Verificar atualizações -> $VN."

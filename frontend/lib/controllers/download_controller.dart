@@ -15,8 +15,9 @@ class DownloadController extends ChangeNotifier {
 
   OfflineStore get store => _store;
 
+  /// No-op mantido por compatibilidade de wiring; o OfflineStore agora é
+  /// inicializado em main.dart com o id do usuário autenticado.
   Future<void> init() async {
-    await _store.init();
     notifyListeners();
   }
 

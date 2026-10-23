@@ -14,51 +14,54 @@ export class CollectionsService {
     private readonly tracks: TracksService,
   ) {}
 
-  list(): CollectionSummary[] {
-    return this.repo.findAll().map((c) => this.summary(c));
+  list(userId: string): CollectionSummary[] {
+    return this.repo.findAll(userId).map((c) => this.summary(c));
   }
 
-  get(id: string): CollectionDetail {
-    const collection = this.repo.findByIdOrFail(id);
+  get(userId: string, id: string): CollectionDetail {
+    const collection = this.repo.findByIdOrFail(userId, id);
     return {
       ...this.summary(collection),
-      items: this.tracks.resolveResponses(collection.trackIds),
+      items: this.tracks.resolveResponses(userId, collection.trackIds),
     };
   }
 
-  create(name: string, trackIds: string[] = []): CollectionDetail {
-    const created = this.repo.create(name.trim(), trackIds);
-    return this.get(created.id);
+  create(userId: string, name: string, trackIds: string[] = []): CollectionDetail {
+    const created = this.repo.create(userId, name.trim(), trackIds);
+    return this.get(userId, created.id);
   }
 
   update(
+    userId: string,
     id: string,
     data: { name?: string; trackIds?: string[] },
   ): CollectionDetail {
     const patch: Partial<Pick<Collection, 'name' | 'trackIds'>> = {};
     if (data.name !== undefined) patch.name = data.name.trim();
     if (data.trackIds !== undefined) patch.trackIds = data.trackIds;
-    this.repo.update(id, patch);
-    return this.get(id);
+    this.repo.update(userId, id, patch);
+    return this.get(userId, id);
   }
 
-  addTracks(id: string, trackIds: string[]): CollectionDetail {
-    const collection = this.repo.findByIdOrFail(id);
+  addTracks(userId: string, id: string, trackIds: string[]): CollectionDetail {
+    const collection = this.repo.findByIdOrFail(userId, id);
     const toAdd = trackIds.filter((t) => !collection.trackIds.includes(t));
-    this.repo.update(id, { trackIds: [...collection.trackIds, ...toAdd] });
-    return this.get(id);
+    this.repo.update(userId, id, {
+      trackIds: [...collection.trackIds, ...toAdd],
+    });
+    return this.get(userId, id);
   }
 
-  removeTrack(id: string, trackId: string): CollectionDetail {
-    const collection = this.repo.findByIdOrFail(id);
-    this.repo.update(id, {
+  removeTrack(userId: string, id: string, trackId: string): CollectionDetail {
+    const collection = this.repo.findByIdOrFail(userId, id);
+    this.repo.update(userId, id, {
       trackIds: collection.trackIds.filter((t) => t !== trackId),
     });
-    return this.get(id);
+    return this.get(userId, id);
   }
 
-  remove(id: string): void {
-    this.repo.delete(id);
+  remove(userId: string, id: string): void {
+    this.repo.delete(userId, id);
   }
 
   private summary(collection: Collection): CollectionSummary {

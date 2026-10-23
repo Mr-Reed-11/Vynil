@@ -3,6 +3,7 @@ import {
   ConflictException,
   Injectable,
   Logger,
+  NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DownloadQueueService } from './download-queue.service';
@@ -62,7 +63,7 @@ export class TracksService {
    * Recebe um link, consulta os metadados e enfileira o download.
    * Idempotente por youtubeId: reenviar o mesmo link nao duplica nada.
    */
-  async create(dto: CreateTrackDto): Promise<CreateTrackResult> {
+  async create(userId: string, dto: CreateTrackDto): Promise<CreateTrackResult> {
     const url = this.normalizeUrl(dto.url);
     const metadata = await this.ytdlp.probe(url);
 
@@ -77,7 +78,7 @@ export class TracksService {
       );
     }
 
-    const existing = this.repository.findByYoutubeId(metadata.youtubeId);
+    const existing = this.repository.findByYoutubeId(userId, metadata.youtubeId);
     if (existing) {
       if (existing.status === 'error') {
         const restarted = this.repository.update(existing.id, {
@@ -100,6 +101,7 @@ export class TracksService {
     }
 
     const track = this.repository.create({
+      userId,
       youtubeId: metadata.youtubeId,
       url: metadata.webpageUrl,
       title: metadata.title,
@@ -126,7 +128,10 @@ export class TracksService {
    * Expande uma playlist e enfileira as faixas que ainda nao existem.
    * Idempotente por youtubeId: itens ja presentes sao contados como ignorados.
    */
-  async createFromPlaylist(dto: CreateTrackDto): Promise<PlaylistResult> {
+  async createFromPlaylist(
+    userId: string,
+    dto: CreateTrackDto,
+  ): Promise<PlaylistResult> {
     const url = this.normalizeUrl(dto.url);
     const max =
       Number(this.config.get<string>('MAX_PLAYLIST_ITEMS', '100')) || 100;
@@ -137,7 +142,7 @@ export class TracksService {
     let skipped = 0;
 
     for (const entry of info.entries) {
-      const existing = this.repository.findByYoutubeId(entry.youtubeId);
+      const existing = this.repository.findByYoutubeId(userId, entry.youtubeId);
       if (existing) {
         skipped += 1;
         items.push(this.toResponse(existing));
@@ -145,6 +150,7 @@ export class TracksService {
       }
 
       const track = this.repository.create({
+        userId,
         youtubeId: entry.youtubeId,
         url: entry.webpageUrl,
         title: entry.title,
@@ -178,8 +184,9 @@ export class TracksService {
     };
   }
 
-  list(query: QueryTracksDto): TrackListResponse {
+  list(userId: string, query: QueryTracksDto): TrackListResponse {
     const { items, total } = this.repository.findAll({
+      userId,
       status: query.status,
       query: query.q,
       limit: query.limit,
@@ -194,16 +201,25 @@ export class TracksService {
     };
   }
 
-  get(id: string): TrackResponse {
-    return this.toResponse(this.repository.findByIdOrFail(id));
+  get(userId: string, id: string): TrackResponse {
+    return this.toResponse(this.getOwned(userId, id));
   }
 
-  /** Resolve IDs em respostas, preservando a ordem e ignorando ausentes. */
-  resolveResponses(ids: string[]): TrackResponse[] {
+  /** Busca a faixa e garante que pertence ao usuario (senao 404). */
+  private getOwned(userId: string, id: string): Track {
+    const track = this.repository.findById(id);
+    if (!track || track.userId !== userId) {
+      throw new NotFoundException(`Faixa ${id} nao encontrada.`);
+    }
+    return track;
+  }
+
+  /** Resolve IDs em respostas (apenas faixas do usuario), na ordem dada. */
+  resolveResponses(userId: string, ids: string[]): TrackResponse[] {
     const result: TrackResponse[] = [];
     for (const id of ids) {
       const track = this.repository.findById(id);
-      if (track) {
+      if (track && track.userId === userId) {
         result.push(this.toResponse(track));
       }
     }
@@ -211,12 +227,12 @@ export class TracksService {
   }
 
   /** Usado pelo controller para servir arquivos (capa/audio). */
-  getEntity(id: string): Track {
-    return this.repository.findByIdOrFail(id);
+  getEntity(userId: string, id: string): Track {
+    return this.getOwned(userId, id);
   }
 
-  getReadyTrack(id: string): Track {
-    const track = this.repository.findByIdOrFail(id);
+  getReadyTrack(userId: string, id: string): Track {
+    const track = this.getOwned(userId, id);
     if (track.status !== 'ready' || !track.fileName) {
       throw new ConflictException(
         `A faixa ainda nao esta pronta (status: ${track.status}).`,
@@ -225,8 +241,8 @@ export class TracksService {
     return track;
   }
 
-  async remove(id: string): Promise<void> {
-    const track = this.repository.findByIdOrFail(id);
+  async remove(userId: string, id: string): Promise<void> {
+    const track = this.getOwned(userId, id);
     if (track.status === 'downloading') {
       throw new ConflictException(
         'A faixa esta sendo baixada. Aguarde terminar para excluir.',
@@ -238,8 +254,8 @@ export class TracksService {
     this.logger.log(`Faixa removida: ${track.title}`);
   }
 
-  retry(id: string): TrackResponse {
-    const track = this.repository.findByIdOrFail(id);
+  retry(userId: string, id: string): TrackResponse {
+    const track = this.getOwned(userId, id);
     if (track.status !== 'error') {
       throw new ConflictException(
         'Somente faixas com erro podem ser reprocessadas.',
@@ -255,14 +271,14 @@ export class TracksService {
     return this.toResponse(updated);
   }
 
-  stats(): LibraryStats {
-    const byStatus = this.repository.countByStatus();
+  stats(userId: string): LibraryStats {
+    const byStatus = this.repository.countByStatus(userId);
     const total = Object.values(byStatus).reduce((sum, value) => sum + value, 0);
 
     return {
       total,
       byStatus,
-      totalSizeBytes: this.repository.totalSizeBytes(),
+      totalSizeBytes: this.repository.totalSizeBytes(userId),
       storageDir: this.storage.rootDir,
     };
   }

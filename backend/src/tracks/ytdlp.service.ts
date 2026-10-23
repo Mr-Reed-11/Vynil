@@ -208,10 +208,12 @@ export class YtDlpService {
    */
   async download(
     url: string,
-    youtubeId: string,
+    trackId: string,
     onProgress: (percent: number) => void,
   ): Promise<DownloadResult> {
-    const outputTemplate = join(this.storage.musicDir, '%(id)s.%(ext)s');
+    // Nome do arquivo = trackId (UUID unico por faixa/usuario): evita colisao
+    // entre usuarios que baixam o mesmo video.
+    const outputTemplate = join(this.storage.musicDir, `${trackId}.%(ext)s`);
 
     const args = [
       '--no-playlist',
@@ -249,10 +251,10 @@ export class YtDlpService {
       args.unshift('--ffmpeg-location', this.ffmpegLocation);
     }
 
-    this.logger.log(`Iniciando download de ${youtubeId} (${url})`);
+    this.logger.log(`Iniciando download de ${trackId} (${url})`);
     await this.spawnDownload(args, onProgress);
 
-    const fileName = `${youtubeId}.mp3`;
+    const fileName = `${trackId}.mp3`;
     const audioPath = this.storage.musicPath(fileName);
     if (!(await this.storage.exists(audioPath))) {
       throw new BadGatewayException(
@@ -261,9 +263,9 @@ export class YtDlpService {
     }
 
     let coverFileName: string | null = null;
-    const thumbnailSource = this.storage.musicPath(`${youtubeId}.jpg`);
+    const thumbnailSource = this.storage.musicPath(`${trackId}.jpg`);
     if (await this.storage.exists(thumbnailSource)) {
-      coverFileName = `${youtubeId}.jpg`;
+      coverFileName = `${trackId}.jpg`;
       await rename(thumbnailSource, this.storage.coverPath(coverFileName));
     }
 

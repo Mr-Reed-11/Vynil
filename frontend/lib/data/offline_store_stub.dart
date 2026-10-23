@@ -3,7 +3,7 @@ import 'track.dart';
 
 /// Stub web: sem dart:io, download offline não se aplica.
 class OfflineStore {
-  Future<void> init() async {}
+  Future<void> init([String userId = '_default']) async {}
 
   Set<String> get downloadedIds => const {};
   List<Track> get tracks => const [];

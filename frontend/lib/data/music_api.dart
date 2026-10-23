@@ -46,6 +46,23 @@ class PlaylistResult {
   final int skipped;
 }
 
+class AuthResult {
+  AuthResult({required this.token, required this.userId, required this.username});
+
+  final String token;
+  final String userId;
+  final String username;
+
+  factory AuthResult.fromJson(Map<String, dynamic> json) {
+    final user = json['user'] as Map<String, dynamic>?;
+    return AuthResult(
+      token: json['token'] as String? ?? '',
+      userId: user?['id'] as String? ?? '',
+      username: user?['username'] as String? ?? '',
+    );
+  }
+}
+
 class ApiException implements Exception {
   ApiException(this.statusCode, this.message);
 
@@ -60,38 +77,73 @@ class ApiException implements Exception {
 class MusicApi {
   MusicApi({
     required String baseUrl,
-    String apiKey = '',
+    String token = '',
     http.Client? client,
   })  : baseUrl = _normalizeBase(baseUrl),
-        apiKey = apiKey.trim(),
+        token = token.trim(),
         _client = client ?? http.Client();
 
-  /// URL do servidor; pode ser alterada em runtime pela tela de configuração.
+  /// URL do servidor; pode ser alterada em runtime.
   String baseUrl;
-  String apiKey;
+
+  /// Token JWT do usuário logado (vazio = não autenticado).
+  String token;
   final http.Client _client;
+
+  /// Chamado quando uma requisição autenticada recebe 401 (token expirado).
+  void Function()? onUnauthorized;
 
   static String _normalizeBase(String value) =>
       value.trim().replaceAll(RegExp(r'/+$'), '');
 
-  /// Atualiza servidor/chave em runtime (sem recriar os controllers).
-  void configure({required String baseUrl, required String apiKey}) {
-    this.baseUrl = _normalizeBase(baseUrl);
-    this.apiKey = apiKey.trim();
+  void configure({String? baseUrl, String? token}) {
+    if (baseUrl != null) this.baseUrl = _normalizeBase(baseUrl);
+    if (token != null) this.token = token.trim();
   }
 
   Map<String, String> get authHeaders =>
-      apiKey.isEmpty ? const {} : {'x-api-key': apiKey};
+      token.isEmpty ? const {} : {'Authorization': 'Bearer $token'};
 
   /// URL de capa para a notificação de mídia: o carregador de artwork do
-  /// sistema não envia headers, então a API key vai na query (o guard aceita
-  /// ?api_key=...).
+  /// sistema não envia headers, então o token vai na query (?token=...).
   String? artworkUrl(String? coverUrl) {
     final absolute = absoluteUrl(coverUrl);
     if (absolute == null) return null;
-    if (apiKey.isEmpty) return absolute;
+    if (token.isEmpty) return absolute;
     final sep = absolute.contains('?') ? '&' : '?';
-    return '$absolute${sep}api_key=${Uri.encodeQueryComponent(apiKey)}';
+    return '$absolute${sep}token=${Uri.encodeQueryComponent(token)}';
+  }
+
+  /// Login → retorna token + usuário.
+  Future<AuthResult> login(String username, String password) async {
+    final response = await _send(
+      () => _client.post(
+        _uri('/api/auth/login'),
+        headers: const {'content-type': 'application/json'},
+        body: jsonEncode({'username': username, 'password': password}),
+      ),
+    );
+    return AuthResult.fromJson(_handle(response) as Map<String, dynamic>);
+  }
+
+  /// Cadastro (com chave de convite) → retorna token + usuário.
+  Future<AuthResult> register(
+    String username,
+    String password,
+    String inviteKey,
+  ) async {
+    final response = await _send(
+      () => _client.post(
+        _uri('/api/auth/register'),
+        headers: const {'content-type': 'application/json'},
+        body: jsonEncode({
+          'username': username,
+          'password': password,
+          'inviteKey': inviteKey,
+        }),
+      ),
+    );
+    return AuthResult.fromJson(_handle(response) as Map<String, dynamic>);
   }
 
   /// Converte `streamUrl`/`coverUrl` relativos em URL absoluta.
@@ -228,6 +280,11 @@ class MusicApi {
 
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return decoded;
+    }
+
+    // 401 numa requisição autenticada → token expirou/inválido: desloga.
+    if (response.statusCode == 401 && token.isNotEmpty) {
+      onUnauthorized?.call();
     }
 
     var message = 'Erro ${response.statusCode}';

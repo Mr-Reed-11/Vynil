@@ -16,18 +16,32 @@ import 'track.dart';
 ///   `library.json`  (lista de Track em JSON)
 class OfflineStore {
   Directory? _base;
+  String _userId = '';
   final Map<String, Track> _index = {};
   final List<Track> _catalog = [];
 
-  Future<void> init() async {
-    if (_base != null) return;
+  /// Inicializa o armazenamento isolado para [userId]. Reinicializa se o
+  /// usuário mudar (cada um tem sua própria pasta/catálogo).
+  Future<void> init([String userId = '_default']) async {
+    final uid = userId.isEmpty ? '_default' : userId;
+    if (_base != null && _userId == uid) return;
+    _userId = uid;
+    _index.clear();
+    _catalog.clear();
     final dir = await getApplicationDocumentsDirectory();
-    final base = Directory('${dir.path}/vynil');
+    final safe = uid.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
+    final base = Directory('${dir.path}/vynil/$safe');
     await Directory('${base.path}/music').create(recursive: true);
     await Directory('${base.path}/covers').create(recursive: true);
     _base = base;
     await _loadIndex();
     await _loadCatalog();
+  }
+
+  /// Garante que há uma base inicializada antes de gravar. Se nada chamou
+  /// [init] com o usuário ainda, usa o namespace padrão.
+  Future<void> _ensureBase() async {
+    if (_base == null) await init(_userId);
   }
 
   String get _musicDir => '${_base!.path}/music';
@@ -40,7 +54,7 @@ class OfflineStore {
   List<Track> get catalog => List.unmodifiable(_catalog);
 
   Future<void> saveCatalog(List<Track> tracks) async {
-    await init();
+    await _ensureBase();
     _catalog
       ..clear()
       ..addAll(tracks);
@@ -104,7 +118,7 @@ class OfflineStore {
     required MusicApi api,
     void Function(double progress)? onProgress,
   }) async {
-    await init();
+    await _ensureBase();
     final streamUrl = api.absoluteUrl(track.streamUrl);
     if (streamUrl == null) {
       throw Exception('Faixa ainda não está pronta para download.');
@@ -159,7 +173,7 @@ class OfflineStore {
   }
 
   Future<void> remove(String id) async {
-    await init();
+    await _ensureBase();
     try {
       await File('$_musicDir/$id.mp3').delete();
     } catch (_) {}
