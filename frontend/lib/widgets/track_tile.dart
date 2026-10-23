@@ -1,0 +1,215 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../controllers/library_controller.dart';
+import '../controllers/player_controller.dart';
+import '../core/format.dart';
+import '../data/track.dart';
+import 'cover_art.dart';
+
+enum _TrackAction { play, retry, delete }
+
+class TrackTile extends StatelessWidget {
+  const TrackTile({super.key, required this.track});
+
+  final Track track;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final player = context.watch<PlayerController>();
+    final isCurrent = player.current?.id == track.id;
+    final isPlaying = isCurrent && player.isPlaying;
+    final busy = track.status.isBusy;
+
+    return Material(
+      color: isCurrent
+          ? scheme.primaryContainer.withValues(alpha: 0.35)
+          : scheme.surfaceContainerLow,
+      borderRadius: BorderRadius.circular(14),
+      clipBehavior: Clip.antiAlias,
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        onTap: () => _onTap(context),
+        leading: Stack(
+          alignment: Alignment.center,
+          children: [
+            CoverArt(url: track.coverUrl ?? track.thumbnailUrl),
+            if (busy) ...[
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.55),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+              SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(
+                  value: track.status == TrackStatus.downloading
+                      ? (track.progress / 100).clamp(0.0, 1.0).toDouble()
+                      : null,
+                  strokeWidth: 2.5,
+                  color: scheme.primary,
+                ),
+              ),
+            ],
+          ],
+        ),
+        title: Text(
+          track.title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontWeight: isCurrent ? FontWeight.w700 : FontWeight.w600,
+            color: isCurrent ? scheme.primary : null,
+          ),
+        ),
+        subtitle: Text(
+          _subtitle(),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: 12.5,
+            color: track.status == TrackStatus.error
+                ? scheme.error
+                : scheme.onSurfaceVariant,
+          ),
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (track.status == TrackStatus.ready)
+              IconButton.filledTonal(
+                tooltip: isPlaying ? 'Pausar' : 'Reproduzir',
+                onPressed: () =>
+                    context.read<PlayerController>().playTrack(track),
+                icon: Icon(
+                  isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                ),
+              )
+            else if (track.status == TrackStatus.error)
+              IconButton(
+                tooltip: 'Tentar novamente',
+                onPressed: () => _retry(context),
+                icon: const Icon(Icons.refresh_rounded),
+              ),
+            PopupMenuButton<_TrackAction>(
+              tooltip: 'Opções',
+              onSelected: (action) => _handleAction(context, action),
+              itemBuilder: (_) => [
+                if (track.status == TrackStatus.ready)
+                  const PopupMenuItem(
+                    value: _TrackAction.play,
+                    child: Text('Reproduzir'),
+                  ),
+                if (track.status == TrackStatus.error)
+                  const PopupMenuItem(
+                    value: _TrackAction.retry,
+                    child: Text('Tentar novamente'),
+                  ),
+                const PopupMenuItem(
+                  value: _TrackAction.delete,
+                  child: Text('Excluir'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _subtitle() {
+    return switch (track.status) {
+      TrackStatus.error => track.error ?? 'Falha no download.',
+      TrackStatus.queued => '${track.status.label} • 0%',
+      TrackStatus.downloading =>
+        '${track.status.label} • ${track.progress.round()}%',
+      TrackStatus.ready =>
+        '${track.artist} • ${formatDuration(track.duration)}',
+    };
+  }
+
+  void _onTap(BuildContext context) {
+    if (track.status == TrackStatus.ready) {
+      context.read<PlayerController>().playTrack(track);
+      return;
+    }
+    if (track.status == TrackStatus.error) {
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(track.error ?? 'Falha no download.'),
+          action: SnackBarAction(
+            label: 'Tentar',
+            onPressed: () => _retry(context),
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _handleAction(BuildContext context, _TrackAction action) async {
+    switch (action) {
+      case _TrackAction.play:
+        await context.read<PlayerController>().playTrack(track);
+      case _TrackAction.retry:
+        await _retry(context);
+      case _TrackAction.delete:
+        await _delete(context);
+    }
+  }
+
+  Future<void> _retry(BuildContext context) async {
+    final library = context.read<LibraryController>();
+    final messenger = ScaffoldMessenger.of(context);
+
+    try {
+      await library.retry(track);
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Download reenfileirado.')),
+      );
+    } catch (error) {
+      messenger.showSnackBar(SnackBar(content: Text(error.toString())));
+    }
+  }
+
+  Future<void> _delete(BuildContext context) async {
+    final library = context.read<LibraryController>();
+    final messenger = ScaffoldMessenger.of(context);
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Excluir faixa?'),
+        content: Text('"${track.title}" será removida do servidor.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Excluir'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) {
+      return;
+    }
+
+    try {
+      await library.remove(track);
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Faixa excluída.')),
+      );
+    } catch (error) {
+      messenger.showSnackBar(SnackBar(content: Text(error.toString())));
+    }
+  }
+}

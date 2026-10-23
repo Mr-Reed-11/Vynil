@@ -1,0 +1,19 @@
+node_modules/
+dist/
+*.tsbuildinfo
+
+.env
+.env.local
+
+# Conteudo baixado (nao versionar)
+storage/music/*
+storage/covers/*
+storage/db/*
+!storage/music/.gitkeep
+!storage/covers/.gitkeep
+!storage/db/.gitkeep
+
+# Temporarios de download
+*.part
+*.ytdl
+*.tmp
