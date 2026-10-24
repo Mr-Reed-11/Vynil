@@ -17,13 +17,6 @@ services:
       JWT_SECRET: ${JWT_SECRET:-}
       INVITE_KEY: ${INVITE_KEY:-}
       JWT_TTL_SECONDS: ${JWT_TTL_SECONDS:-2592000}
-      # Aprovacao de cadastro por email (SMTP). Sem isso, cadastro usa convite.
-      SMTP_HOST: ${SMTP_HOST:-}
-      SMTP_PORT: ${SMTP_PORT:-587}
-      SMTP_USER: ${SMTP_USER:-}
-      SMTP_PASS: ${SMTP_PASS:-}
-      SMTP_FROM: ${SMTP_FROM:-}
-      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
       MAX_PLAYLIST_ITEMS: ${MAX_PLAYLIST_ITEMS:-100}
       # Atualizacao in-app (APK sideloaded)
       APP_LATEST_VERSION: ${APP_LATEST_VERSION:-1.0.0}

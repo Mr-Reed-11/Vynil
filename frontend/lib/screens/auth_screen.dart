@@ -15,7 +15,7 @@ class _AuthScreenState extends State<AuthScreen> {
   late final TextEditingController _server;
   final _username = TextEditingController();
   final _password = TextEditingController();
-  final _email = TextEditingController();
+  final _invite = TextEditingController();
   bool _registering = false;
 
   @override
@@ -31,7 +31,7 @@ class _AuthScreenState extends State<AuthScreen> {
     _server.dispose();
     _username.dispose();
     _password.dispose();
-    _email.dispose();
+    _invite.dispose();
     super.dispose();
   }
 
@@ -40,12 +40,11 @@ class _AuthScreenState extends State<AuthScreen> {
     FocusScope.of(context).unfocus();
     await auth.setServerUrl(_server.text);
     if (_registering) {
-      await auth.register(_username.text, _password.text, _email.text);
+      await auth.register(_username.text, _password.text, _invite.text);
     } else {
       await auth.login(_username.text, _password.text);
     }
-    // A navegação é automática pelo gate quando isAuthenticated muda;
-    // cadastro pendente mostra o painel de espera no próprio estado.
+    // A navegação é automática pelo gate quando isAuthenticated muda.
   }
 
   @override
@@ -131,15 +130,11 @@ class _AuthScreenState extends State<AuthScreen> {
                     if (_registering) ...[
                       const SizedBox(height: 12),
                       TextField(
-                        controller: _email,
+                        controller: _invite,
                         enabled: !auth.busy,
-                        keyboardType: TextInputType.emailAddress,
-                        textInputAction: TextInputAction.done,
-                        onSubmitted: (_) => _submit(),
                         decoration: const InputDecoration(
-                          labelText: 'Email',
-                          hintText: 'voce@email.com',
-                          prefixIcon: Icon(Icons.alternate_email_rounded),
+                          labelText: 'Chave de convite',
+                          prefixIcon: Icon(Icons.vpn_key_rounded),
                         ),
                       ),
                     ],
@@ -149,36 +144,6 @@ class _AuthScreenState extends State<AuthScreen> {
                         auth.error!,
                         style: TextStyle(color: scheme.error),
                         textAlign: TextAlign.center,
-                      ),
-                    ],
-                    if (auth.pending && auth.info != null) ...[
-                      const SizedBox(height: 16),
-                      Container(
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: scheme.secondaryContainer.withValues(alpha: 0.4),
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(Icons.mark_email_read_outlined,
-                                color: scheme.primary),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                auth.info!,
-                                style: TextStyle(color: scheme.onSurface),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      TextButton(
-                        onPressed: auth.busy
-                            ? null
-                            : () => setState(() => _registering = false),
-                        child: const Text('Ok, já foi aprovado? Entrar'),
                       ),
                     ],
                     const SizedBox(height: 24),

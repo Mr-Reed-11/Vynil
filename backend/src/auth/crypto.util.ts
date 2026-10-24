@@ -28,8 +28,6 @@ export function verifyPassword(password: string, stored: string): boolean {
 export interface JwtPayload {
   sub: string; // userId
   username: string;
-  /** técnico: distinguir token de ação (approve/reject) do token de sessão. */
-  type?: string;
   iat?: number;
   exp?: number;
 }
@@ -39,7 +37,7 @@ function b64url(input: Buffer | string): string {
 }
 
 export function signJwt(
-  payload: { sub: string; username: string; type?: string },
+  payload: { sub: string; username: string },
   secret: string,
   expiresInSeconds: number,
 ): string {

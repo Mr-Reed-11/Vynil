@@ -47,20 +47,11 @@ class PlaylistResult {
 }
 
 class AuthResult {
-  AuthResult({
-    required this.token,
-    required this.userId,
-    required this.username,
-    required this.pending,
-    this.message,
-  });
+  AuthResult({required this.token, required this.userId, required this.username});
 
   final String token;
   final String userId;
   final String username;
-  /// true quando a conta entrou em fila de aprovação (email).
-  final bool pending;
-  final String? message;
 
   factory AuthResult.fromJson(Map<String, dynamic> json) {
     final user = json['user'] as Map<String, dynamic>?;
@@ -68,8 +59,6 @@ class AuthResult {
       token: json['token'] as String? ?? '',
       userId: user?['id'] as String? ?? '',
       username: user?['username'] as String? ?? '',
-      pending: json['status'] == 'pending',
-      message: json['message'] as String?,
     );
   }
 }
@@ -137,14 +126,12 @@ class MusicApi {
     return AuthResult.fromJson(_handle(response) as Map<String, dynamic>);
   }
 
-  /// Cadastro por email → conta pendente de aprovação (ou token, se o
-  /// servidor exigir/enviar convite).
+  /// Cadastro (com chave de convite) → retorna token + usuário.
   Future<AuthResult> register(
     String username,
     String password,
-    String email, {
-    String inviteKey = '',
-  }) async {
+    String inviteKey,
+  ) async {
     final response = await _send(
       () => _client.post(
         _uri('/api/auth/register'),
@@ -152,8 +139,7 @@ class MusicApi {
         body: jsonEncode({
           'username': username,
           'password': password,
-          'email': email.trim(),
-          if (inviteKey.trim().isNotEmpty) 'inviteKey': inviteKey.trim(),
+          'inviteKey': inviteKey,
         }),
       ),
     );

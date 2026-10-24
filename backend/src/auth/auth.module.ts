@@ -4,7 +4,6 @@ import { TracksModule } from '../tracks/tracks.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
-import { MailerService } from './mailer.service';
 import { UsersRepository } from './users.repository';
 
 @Module({
@@ -12,7 +11,6 @@ import { UsersRepository } from './users.repository';
   controllers: [AuthController],
   providers: [
     UsersRepository,
-    MailerService,
     AuthService,
     { provide: APP_GUARD, useClass: JwtAuthGuard },
   ],

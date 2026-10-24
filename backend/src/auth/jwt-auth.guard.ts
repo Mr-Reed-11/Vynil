@@ -14,8 +14,6 @@ const PUBLIC_PATHS = new Set<string>([
   '/api/app/apk',
   '/api/auth/login',
   '/api/auth/register',
-  '/api/auth/approve',
-  '/api/auth/reject',
 ]);
 
 /**
