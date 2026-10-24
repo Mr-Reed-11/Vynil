@@ -4,10 +4,16 @@ import { readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { StorageService } from '../tracks/storage.service';
 
+export type UserStatus = 'pending' | 'active' | 'rejected';
+
 export interface User {
   id: string;
   username: string;
   usernameLower: string;
+  /** Email informado no cadastro; usuários antigos podem ter vazio. */
+  email: string;
+  /** pending = aguardando aprovação; active = liberado. */
+  status: UserStatus;
   passwordHash: string;
   createdAt: string;
 }
@@ -45,7 +51,7 @@ export class UsersRepository implements OnModuleInit {
       const raw = await readFile(this.file, 'utf8');
       const parsed = JSON.parse(raw) as DatabaseFile;
       for (const u of parsed.users ?? []) {
-        this.users.set(u.id, u);
+        this.users.set(u.id, this.migrate(u));
       }
       this.logger.log(`${this.users.size} usuario(s) carregado(s)`);
     } catch (error) {
@@ -73,17 +79,58 @@ export class UsersRepository implements OnModuleInit {
     return undefined;
   }
 
-  create(username: string, passwordHash: string): User {
+  findByEmail(email: string): User | undefined {
+    const lower = email.trim().toLowerCase();
+    for (const u of this.users.values()) {
+      if (u.email.toLowerCase() === lower) return u;
+    }
+    return undefined;
+  }
+
+  countPending(): number {
+    return [...this.users.values()].filter((u) => u.status === 'pending')
+      .length;
+  }
+
+  create(
+    username: string,
+    passwordHash: string,
+    email: string,
+    status: UserStatus = 'pending',
+  ): User {
     const user: User = {
       id: randomUUID(),
       username: username.trim(),
       usernameLower: username.trim().toLowerCase(),
+      email: email.trim(),
+      status,
       passwordHash,
       createdAt: new Date().toISOString(),
     };
     this.users.set(user.id, user);
     void this.persist();
     return user;
+  }
+
+  setStatus(id: string, status: UserStatus): User | undefined {
+    const user = this.users.get(id);
+    if (!user) return undefined;
+    user.status = status;
+    void this.persist();
+    return user;
+  }
+
+  remove(id: string): void {
+    if (this.users.delete(id)) void this.persist();
+  }
+
+  private migrate(raw: User): User {
+    // Usuários criados antes do fluxo de aprovação: já eram convidados → ativos.
+    return {
+      ...raw,
+      email: raw.email || '',
+      status: raw.status || 'active',
+    };
   }
 
   private persist(): Promise<void> {
