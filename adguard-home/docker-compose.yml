@@ -1,0 +1,20 @@
+# AdGuard Home — bloqueador de anúncios via DNS para a rede de casa.
+#
+# Sobe na mesma máquina do Vynil (portas nunca conflitam):
+#   - DNS na porta 53 (TCP+UDP) → é ela que o roteador vai apontar
+#   - Interface web em http://<ip-do-servidor>:8093 (setup inicial 3000 tb mapeado)
+#
+# Uso no servidor:  docker compose -f adguard-home/docker-compose.yml up -d
+services:
+  adguard:
+    image: adguard/adguardhome:latest
+    container_name: adguard-home
+    restart: unless-stopped
+    ports:
+      - "53:53/tcp"
+      - "53:53/udp"
+      - "8093:3000/tcp" # setup inicial e (se escolhido no wizard) dashboard
+      - "8094:80/tcp"   # dashboard, caso o wizard o deixe na porta 80
+    volumes:
+      - ./work:/opt/adguardhome/work
+      - ./conf:/opt/adguardhome/conf
