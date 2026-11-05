@@ -14,6 +14,8 @@ class AddTrackSheet extends StatefulWidget {
 class _AddTrackSheetState extends State<AddTrackSheet> {
   final TextEditingController _controller = TextEditingController();
   bool _loading = false;
+  bool _direct = false; // qual ação está rodando (direto x servidor)
+  double _directProgress = 0;
   String? _error;
 
   @override
@@ -72,6 +74,47 @@ class _AddTrackSheetState extends State<AddTrackSheet> {
     }
   }
 
+  /// Baixa direto no dispositivo (sem o backend) — só vídeo único.
+  Future<void> _downloadDirect() async {
+    final url = _controller.text.trim();
+    if (url.isEmpty) {
+      setState(() => _error = 'Cole o link do vídeo.');
+      return;
+    }
+    if (_looksLikePlaylist(url)) {
+      setState(() =>
+          _error = 'Download direto é só para vídeo único (não playlist).');
+      return;
+    }
+
+    FocusScope.of(context).unfocus();
+    final library = context.read<LibraryController>();
+    setState(() {
+      _loading = true;
+      _direct = true;
+      _directProgress = 0;
+      _error = null;
+    });
+
+    try {
+      final track = await library.downloadFromYoutube(
+        url,
+        onProgress: (p) {
+          if (mounted) setState(() => _directProgress = p);
+        },
+      );
+      if (!mounted) return;
+      Navigator.of(context).pop('"${track.title}" salva no dispositivo.');
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _direct = false;
+        _error = error.toString();
+      });
+    }
+  }
+
   Future<void> _paste() async {
     final data = await Clipboard.getData(Clipboard.kTextPlain);
     final text = data?.text?.trim();
@@ -110,8 +153,8 @@ class _AddTrackSheetState extends State<AddTrackSheet> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Cole um link do YouTube — vídeo ou playlist. O servidor baixa '
-              'o áudio e a capa.',
+              'Cole um link do YouTube. "Servidor" envia pro backend (vídeo ou '
+              'playlist). "No dispositivo" baixa direto aqui, sem backend.',
               style: TextStyle(color: scheme.onSurfaceVariant),
             ),
             const SizedBox(height: 16),
@@ -133,6 +176,18 @@ class _AddTrackSheetState extends State<AddTrackSheet> {
                 ),
               ),
             ),
+            if (_direct && _loading) ...[
+              const SizedBox(height: 16),
+              LinearProgressIndicator(
+                value: _directProgress > 0 ? _directProgress : null,
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Baixando no dispositivo... '
+                '${(_directProgress * 100).toStringAsFixed(0)}%',
+                style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+              ),
+            ],
             const SizedBox(height: 16),
             Row(
               children: [
@@ -147,17 +202,26 @@ class _AddTrackSheetState extends State<AddTrackSheet> {
                 Expanded(
                   child: FilledButton.icon(
                     onPressed: _loading ? null : _submit,
-                    icon: _loading
+                    icon: (_loading && !_direct)
                         ? const SizedBox(
                             width: 16,
                             height: 16,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Icon(Icons.download_rounded),
-                    label: Text(_loading ? 'Adicionando...' : 'Baixar'),
+                        : const Icon(Icons.cloud_upload_rounded),
+                    label: const Text('Servidor'),
                   ),
                 ),
               ],
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.tonalIcon(
+                onPressed: _loading ? null : _downloadDirect,
+                icon: const Icon(Icons.download_for_offline_rounded),
+                label: const Text('Baixar no dispositivo'),
+              ),
             ),
           ],
         ),

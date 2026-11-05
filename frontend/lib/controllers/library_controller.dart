@@ -47,7 +47,7 @@ class LibraryController extends ChangeNotifier {
       if (_disposed) {
         return;
       }
-      _tracks = tracks;
+      _tracks = _withLocal(tracks);
       _error = null;
       _offline = false;
       // Cacheia o catálogo completo para uso offline (só sem busca ativa,
@@ -93,6 +93,42 @@ class LibraryController extends ChangeNotifier {
     return track;
   }
 
+  /// Baixa um vídeo do YouTube DIRETO no dispositivo (sem o backend).
+  Future<Track> downloadFromYoutube(
+    String url, {
+    void Function(double progress)? onProgress,
+  }) async {
+    final store = _store;
+    if (store == null) {
+      throw Exception('Armazenamento local indisponível nesta plataforma.');
+    }
+    final track = await store.downloadFromYoutube(url, onProgress: onProgress);
+    await load(silent: true);
+    return track;
+  }
+
+  /// Junta as faixas do servidor com as locais (localOnly) que não estão na
+  /// lista do servidor, aplicando a busca ativa.
+  List<Track> _withLocal(List<Track> serverTracks) {
+    final store = _store;
+    if (store == null) return serverTracks;
+    final ids = serverTracks.map((t) => t.id).toSet();
+    final locals = _applyQuery(
+      store.tracks.where((t) => t.localOnly && !ids.contains(t.id)).toList(),
+    );
+    return [...serverTracks, ...locals];
+  }
+
+  List<Track> _applyQuery(List<Track> tracks) {
+    final q = _query.trim().toLowerCase();
+    if (q.isEmpty) return tracks;
+    return tracks
+        .where((t) =>
+            t.title.toLowerCase().contains(q) ||
+            t.artist.toLowerCase().contains(q))
+        .toList(growable: false);
+  }
+
   Future<PlaylistResult> addPlaylist(String url) async {
     final result = await _api.addPlaylist(url);
     await load(silent: true);
@@ -105,23 +141,23 @@ class LibraryController extends ChangeNotifier {
   }
 
   Future<void> remove(Track track) async {
-    await _api.deleteTrack(track.id);
+    if (track.localOnly) {
+      await _store?.remove(track.id);
+    } else {
+      await _api.deleteTrack(track.id);
+    }
     await load(silent: true);
   }
 
   List<Track> _offlineTracks() {
     final store = _store;
     if (store == null) return const [];
-    // Catálogo completo (todas as faixas vistas por último), com fallback para
-    // as baixadas caso ainda não exista catálogo salvo.
-    final all = store.catalog.isNotEmpty ? store.catalog : store.tracks;
-    final q = _query.trim().toLowerCase();
-    if (q.isEmpty) return all;
-    return all
-        .where((t) =>
-            t.title.toLowerCase().contains(q) ||
-            t.artist.toLowerCase().contains(q))
-        .toList(growable: false);
+    // Baixadas (tocam, inclui as locais) + extras do catálogo do servidor
+    // (aparecem como indisponíveis offline).
+    final downloaded = store.tracks;
+    final ids = downloaded.map((t) => t.id).toSet();
+    final extras = store.catalog.where((t) => !ids.contains(t.id));
+    return _applyQuery([...downloaded, ...extras]);
   }
 
   void _schedulePoll() {

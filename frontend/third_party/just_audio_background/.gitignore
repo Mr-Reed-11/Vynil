@@ -1,0 +1,6 @@
+# Artefatos gerados pelo flutter pub get / build (não versionar)
+ios/Flutter/
+ios/Runner/GeneratedPluginRegistrant.*
+ios/*.podspec
+pubspec.lock
+.dart_tool/

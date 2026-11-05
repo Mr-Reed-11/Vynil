@@ -42,6 +42,7 @@ class Track {
     this.streamUrl,
     this.downloadUrl,
     this.coverUrl,
+    this.localOnly = false,
   });
 
   final String id;
@@ -60,7 +61,11 @@ class Track {
   final String? downloadUrl;
   final String? coverUrl;
 
-  bool get isReady => status == TrackStatus.ready && streamUrl != null;
+  /// true = faixa baixada direto no dispositivo (não existe no servidor).
+  final bool localOnly;
+
+  bool get isReady =>
+      status == TrackStatus.ready && (streamUrl != null || localOnly);
 
   Duration get duration => Duration(seconds: durationSeconds);
 
@@ -80,6 +85,7 @@ class Track {
         'streamUrl': streamUrl,
         'downloadUrl': downloadUrl,
         'coverUrl': coverUrl,
+        'localOnly': localOnly,
       };
 
   factory Track.fromJson(Map<String, dynamic> json) {
@@ -101,6 +107,7 @@ class Track {
       streamUrl: json['streamUrl'] as String?,
       downloadUrl: json['downloadUrl'] as String?,
       coverUrl: json['coverUrl'] as String?,
+      localOnly: json['localOnly'] == true,
     );
   }
 }

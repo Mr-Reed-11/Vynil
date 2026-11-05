@@ -24,4 +24,11 @@ class OfflineStore {
   }
 
   Future<void> remove(String id) async {}
+
+  Future<Track> downloadFromYoutube(
+    String videoUrl, {
+    void Function(double progress)? onProgress,
+  }) async {
+    throw UnsupportedError('Download direto disponível apenas no app.');
+  }
 }
