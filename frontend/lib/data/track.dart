@@ -69,6 +69,35 @@ class Track {
 
   Duration get duration => Duration(seconds: durationSeconds);
 
+  Track copyWith({
+    String? title,
+    String? artist,
+    int? durationSeconds,
+    String? thumbnailUrl,
+    TrackStatus? status,
+    double? progress,
+    String? error,
+  }) {
+    return Track(
+      id: id,
+      youtubeId: youtubeId,
+      url: url,
+      title: title ?? this.title,
+      artist: artist ?? this.artist,
+      durationSeconds: durationSeconds ?? this.durationSeconds,
+      status: status ?? this.status,
+      progress: progress ?? this.progress,
+      album: album,
+      thumbnailUrl: thumbnailUrl ?? this.thumbnailUrl,
+      error: error ?? this.error,
+      sizeBytes: sizeBytes,
+      streamUrl: streamUrl,
+      downloadUrl: downloadUrl,
+      coverUrl: coverUrl,
+      localOnly: localOnly,
+    );
+  }
+
   Map<String, dynamic> toJson() => {
         'id': id,
         'youtubeId': youtubeId,

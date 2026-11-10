@@ -52,7 +52,8 @@ Future<void> main() async {
       providers: [
         ChangeNotifierProvider<LibraryController>.value(value: library),
         ChangeNotifierProvider(
-          create: (_) => PlayerController(offlineStore),
+          create: (_) => PlayerController(offlineStore)
+            ..onTrackUpdated = () => library.load(silent: true),
         ),
         ChangeNotifierProvider(
           create: (_) => DownloadController(offlineStore),

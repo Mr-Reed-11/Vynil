@@ -40,6 +40,7 @@ class PlayerController extends ChangeNotifier {
         if (d != null) {
           _duration = d;
           _notify();
+          _persistDurationIfMissing(d);
         }
       }),
     );
@@ -58,6 +59,26 @@ class PlayerController extends ChangeNotifier {
   final OfflineStore _store;
   final AudioPlayer _player = AudioPlayer();
   final List<StreamSubscription<dynamic>> _subscriptions = [];
+
+  /// Chamado quando persistimos a duração de uma faixa (para a lista recarregar
+  /// e exibir o tempo em vez de 0:00). Ligado em main.dart.
+  void Function()? onTrackUpdated;
+
+  /// Preenche a duração da faixa atual no armazenamento se ela foi salva sem
+  /// (download não traz a duração; o player a descobre ao tocar).
+  void _persistDurationIfMissing(Duration d) {
+    final cur = _current;
+    if (cur == null ||
+        !cur.localOnly ||
+        cur.durationSeconds > 0 ||
+        d.inSeconds <= 0) {
+      return;
+    }
+    _store.setDurationIfMissing(cur.id, d.inSeconds).then((_) {
+      _current = cur.copyWith(durationSeconds: d.inSeconds);
+      onTrackUpdated?.call();
+    });
+  }
 
   final ValueNotifier<Duration> _position = ValueNotifier(Duration.zero);
   ValueListenable<Duration> get positionListenable => _position;

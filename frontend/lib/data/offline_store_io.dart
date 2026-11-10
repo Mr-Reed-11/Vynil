@@ -87,6 +87,15 @@ class OfflineStore {
     return File(path).existsSync() ? path : null;
   }
 
+  /// Preenche a duração (em segundos) de uma faixa local que foi salva sem ela
+  /// (vem do player ao tocar pela primeira vez). Só grava se ainda estiver 0.
+  Future<void> setDurationIfMissing(String id, int seconds) async {
+    final t = _index[id];
+    if (t == null || seconds <= 0 || t.durationSeconds > 0) return;
+    _index[id] = t.copyWith(durationSeconds: seconds);
+    await _saveIndex();
+  }
+
   Future<void> remove(String id) async {
     await _ensureBase();
     for (final ext in _audioExts) {
@@ -105,10 +114,11 @@ class OfflineStore {
   /// Baixa um vídeo do YouTube DIRETO no dispositivo, usando youtube_explode.
   /// Salva o áudio + capa e registra a faixa como `localOnly`.
   ///
-  /// Para evitar o rate limiting do YouTube (RequestLimitExceededException),
-  /// NÃO usamos a página `/watch` (fortemente bloqueada): os metadados vêm do
-  /// oEmbed e o manifesto de streams vem dos clients de API mobile/VR
-  /// (endpoint `youtubei/v1/player`), com `requireWatchPage: false`.
+  /// Os metadados (título/artista) vêm do oEmbed (requisição leve), e o
+  /// manifesto de streams usa o caminho padrão da lib (via página /watch, que
+  /// decifra a assinatura e entrega URLs REALMENTE baixáveis no celular — os
+  /// clients de API entregam URLs "throttled" que travam o download). Isso
+  /// mantém só UMA requisição à /watch, reduzindo o risco de rate limit.
   Future<Track> downloadFromYoutube(
     String videoUrl, {
     void Function(double progress)? onProgress,
@@ -119,20 +129,15 @@ class OfflineStore {
       final videoId = VideoId.fromString(videoUrl);
       final id = 'local-${videoId.value}';
 
-      final meta = await _fetchMeta(yt, videoId);
+      final meta = await _fetchMeta(videoId);
 
-      // Manifesto via clients de API (sem a página /watch). Driblam o rate
-      // limit e não precisam decifrar assinatura.
-      final manifest = await yt.videos.streamsClient.getManifest(
-        videoId,
-        ytClients: [
-          YoutubeApiClient.androidVr,
-          YoutubeApiClient.ios,
-          YoutubeApiClient.android,
-          YoutubeApiClient.tv,
-        ],
-        requireWatchPage: false,
-      );
+      final StreamManifest manifest;
+      try {
+        manifest = await yt.videos.streamsClient.getManifest(videoId);
+      } on RequestLimitExceededException {
+        throw Exception('O YouTube limitou os downloads deste aparelho '
+            'temporariamente. Aguarde alguns minutos e tente de novo.');
+      }
       final audio = manifest.audioOnly.withHighestBitrate();
       final ext = audio.container.name;
 
@@ -143,7 +148,16 @@ class OfflineStore {
       final sink = tmp.openWrite();
       var received = 0;
       try {
-        await for (final chunk in yt.videos.streamsClient.get(audio)) {
+        // Timeout de inatividade: se o YouTube "throttlar" e parar de enviar
+        // dados por 30s, aborta em vez de travar o download pra sempre.
+        final stream = yt.videos.streamsClient.get(audio).timeout(
+          const Duration(seconds: 30),
+          onTimeout: (eventSink) => eventSink.addError(
+            Exception('Download travou (sem resposta do YouTube). '
+                'Tente de novo em alguns minutos.'),
+          ),
+        );
+        await for (final chunk in stream) {
           sink.add(chunk);
           received += chunk.length;
           if (total > 0) onProgress?.call((received / total).clamp(0.0, 1.0));
@@ -169,7 +183,7 @@ class OfflineStore {
         url: videoUrl,
         title: meta.title,
         artist: meta.author,
-        durationSeconds: meta.durationSeconds,
+        durationSeconds: 0,
         status: TrackStatus.ready,
         progress: 100,
         thumbnailUrl: 'https://i.ytimg.com/vi/${videoId.value}/hqdefault.jpg',
@@ -184,14 +198,12 @@ class OfflineStore {
     }
   }
 
-  /// Metadados (título/artista/duração) sem bater na página `/watch`.
-  /// 1) oEmbed (leve, não rate-limitado); 2) best-effort via watch page só
-  /// para pegar a duração — se falhar (rate limit), seguimos sem ela.
-  Future<_Meta> _fetchMeta(YoutubeExplode yt, VideoId videoId) async {
+  /// Metadados (título/artista) via oEmbed — requisição leve, sem bater numa
+  /// segunda vez na página `/watch`. A duração fica a cargo do player (vem do
+  /// próprio arquivo ao tocar).
+  Future<_Meta> _fetchMeta(VideoId videoId) async {
     var title = videoId.value;
     var author = '';
-    var durationSeconds = 0;
-
     try {
       final res = await http.get(Uri.parse(
         'https://www.youtube.com/oembed?format=json'
@@ -206,19 +218,7 @@ class OfflineStore {
             .trim();
       }
     } catch (_) {}
-
-    try {
-      final video = await yt.videos.get(videoId);
-      if (video.title.isNotEmpty) title = video.title;
-      if (video.author.isNotEmpty) {
-        author = video.author.replaceAll(RegExp(r' - Topic$'), '').trim();
-      }
-      durationSeconds = video.duration?.inSeconds ?? 0;
-    } catch (_) {
-      // Rate limit / watch page bloqueada: fica com os dados do oEmbed.
-    }
-
-    return _Meta(title: title, author: author, durationSeconds: durationSeconds);
+    return _Meta(title: title, author: author);
   }
 
   Future<void> _saveCover(String id, String videoId) async {
@@ -236,13 +236,8 @@ class OfflineStore {
 }
 
 class _Meta {
-  _Meta({
-    required this.title,
-    required this.author,
-    required this.durationSeconds,
-  });
+  _Meta({required this.title, required this.author});
 
   final String title;
   final String author;
-  final int durationSeconds;
 }

@@ -12,13 +12,22 @@ class LibraryController extends ChangeNotifier {
   final OfflineStore _store;
 
   List<Track> _tracks = const [];
+  // Downloads em andamento (ou que falharam), exibidos no topo da lista.
+  final Map<String, Track> _pending = {};
   bool _loading = false;
   String? _error;
   String _query = '';
   Timer? _searchTimer;
   bool _disposed = false;
 
-  List<Track> get tracks => _tracks;
+  /// Faixas exibidas: downloads em andamento primeiro, depois as salvas.
+  List<Track> get tracks {
+    if (_pending.isEmpty) return _tracks;
+    final pendingIds = _pending.keys.toSet();
+    final rest = _tracks.where((t) => !pendingIds.contains(t.id));
+    return [..._pending.values, ...rest];
+  }
+
   bool get loading => _loading;
   String? get error => _error;
   String get query => _query;
@@ -54,20 +63,94 @@ class LibraryController extends ChangeNotifier {
         Timer(const Duration(milliseconds: 250), () => load(silent: true));
   }
 
-  /// Baixa um vídeo do YouTube direto no dispositivo e atualiza a lista.
+  /// Baixa um vídeo do YouTube direto no dispositivo. A faixa aparece na lista
+  /// imediatamente com "Baixando… X%" e vira faixa normal ao concluir (ou
+  /// mostra "Erro" se falhar).
   Future<Track> downloadFromYoutube(
     String url, {
     void Function(double progress)? onProgress,
   }) async {
-    final track = await _store.downloadFromYoutube(url, onProgress: onProgress);
-    await load(silent: true);
-    return track;
+    final videoId = _extractVideoId(url);
+    final tempId = videoId != null
+        ? 'local-$videoId'
+        : 'pending-${DateTime.now().microsecondsSinceEpoch}';
+
+    _pending[tempId] = Track(
+      id: tempId,
+      youtubeId: videoId ?? '',
+      url: url,
+      title: 'Baixando…',
+      artist: '',
+      durationSeconds: 0,
+      status: TrackStatus.downloading,
+      progress: 0,
+      thumbnailUrl: videoId != null
+          ? 'https://i.ytimg.com/vi/$videoId/hqdefault.jpg'
+          : null,
+    );
+    _notify();
+
+    try {
+      final track = await _store.downloadFromYoutube(
+        url,
+        onProgress: (p) {
+          final cur = _pending[tempId];
+          if (cur != null) {
+            _pending[tempId] = cur.copyWith(progress: (p * 100).clamp(0, 100));
+            _notify();
+          }
+          onProgress?.call(p);
+        },
+      );
+      _pending.remove(tempId);
+      await load(silent: true);
+      return track;
+    } catch (error) {
+      final cur = _pending[tempId];
+      if (cur != null) {
+        _pending[tempId] = cur.copyWith(
+          status: TrackStatus.error,
+          title: 'Falha no download',
+          error: error.toString(),
+        );
+        _notify();
+      }
+      rethrow;
+    }
+  }
+
+  /// Remove um download que falhou (o item vermelho na lista).
+  void dismissFailed(String id) {
+    if (_pending.remove(id) != null) _notify();
   }
 
   Future<void> remove(Track track) async {
+    // Item de download que falhou: só tira da lista.
+    if (_pending.containsKey(track.id)) {
+      dismissFailed(track.id);
+      return;
+    }
     await _store.remove(track.id);
     await load(silent: true);
   }
+
+  /// Extrai o id de 11 caracteres das formas comuns de URL do YouTube.
+  String? _extractVideoId(String url) {
+    final uri = Uri.tryParse(url.trim());
+    if (uri == null) return null;
+    final v = uri.queryParameters['v'];
+    if (v != null && _isVideoId(v)) return v;
+    final segments = uri.pathSegments;
+    if (segments.isNotEmpty) {
+      // youtu.be/<id>, /shorts/<id>, /embed/<id>
+      final last = segments.last;
+      if (_isVideoId(last)) return last;
+    }
+    final m = RegExp(r'[A-Za-z0-9_-]{11}').firstMatch(url);
+    return m?.group(0);
+  }
+
+  bool _isVideoId(String s) => RegExp(r'^[A-Za-z0-9_-]{11}$').hasMatch(s);
 
   List<Track> _applyQuery(List<Track> tracks) {
     final sorted = [...tracks]

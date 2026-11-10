@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -13,8 +15,6 @@ class AddTrackSheet extends StatefulWidget {
 
 class _AddTrackSheetState extends State<AddTrackSheet> {
   final TextEditingController _controller = TextEditingController();
-  bool _loading = false;
-  double _progress = 0;
   String? _error;
 
   @override
@@ -31,8 +31,8 @@ class _AddTrackSheetState extends State<AddTrackSheet> {
     return hasList && (uri.path.contains('playlist') || !hasVideo);
   }
 
-  /// Baixa o vídeo direto no dispositivo (sem backend).
-  Future<void> _download() async {
+  /// Dispara o download e fecha: a faixa aparece na lista com "Baixando… X%".
+  void _download() {
     final url = _controller.text.trim();
     if (url.isEmpty) {
       setState(() => _error = 'Cole o link do vídeo.');
@@ -46,28 +46,15 @@ class _AddTrackSheetState extends State<AddTrackSheet> {
 
     FocusScope.of(context).unfocus();
     final library = context.read<LibraryController>();
-    setState(() {
-      _loading = true;
-      _progress = 0;
-      _error = null;
-    });
-
-    try {
-      final track = await library.downloadFromYoutube(
-        url,
-        onProgress: (p) {
-          if (mounted) setState(() => _progress = p);
-        },
-      );
-      if (!mounted) return;
-      Navigator.of(context).pop('"${track.title}" salva no dispositivo.');
-    } catch (error) {
-      if (!mounted) return;
-      setState(() {
-        _loading = false;
-        _error = error.toString();
-      });
-    }
+    // Fire-and-forget: o progresso/erro aparece na própria lista.
+    unawaited(() async {
+      try {
+        await library.downloadFromYoutube(url);
+      } catch (_) {
+        // Erro já é exibido como item vermelho na lista.
+      }
+    }());
+    Navigator.of(context).pop('Baixando no dispositivo…');
   }
 
   Future<void> _paste() async {
@@ -116,7 +103,6 @@ class _AddTrackSheetState extends State<AddTrackSheet> {
             TextField(
               controller: _controller,
               autofocus: true,
-              enabled: !_loading,
               textInputAction: TextInputAction.go,
               keyboardType: TextInputType.url,
               onSubmitted: (_) => _download(),
@@ -126,44 +112,25 @@ class _AddTrackSheetState extends State<AddTrackSheet> {
                 errorMaxLines: 4,
                 suffixIcon: IconButton(
                   tooltip: 'Colar da área de transferência',
-                  onPressed: _loading ? null : _paste,
+                  onPressed: _paste,
                   icon: const Icon(Icons.content_paste_rounded),
                 ),
               ),
             ),
-            if (_loading) ...[
-              const SizedBox(height: 16),
-              LinearProgressIndicator(
-                value: _progress > 0 ? _progress : null,
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Baixando no dispositivo... '
-                '${(_progress * 100).toStringAsFixed(0)}%',
-                style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
-              ),
-            ],
             const SizedBox(height: 16),
             Row(
               children: [
                 Expanded(
                   child: OutlinedButton(
-                    onPressed:
-                        _loading ? null : () => Navigator.of(context).pop(),
+                    onPressed: () => Navigator.of(context).pop(),
                     child: const Text('Cancelar'),
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: FilledButton.icon(
-                    onPressed: _loading ? null : _download,
-                    icon: _loading
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.download_for_offline_rounded),
+                    onPressed: _download,
+                    icon: const Icon(Icons.download_for_offline_rounded),
                     label: const Text('Baixar'),
                   ),
                 ),

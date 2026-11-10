@@ -20,6 +20,10 @@ class TrackTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final downloading = track.status == TrackStatus.downloading ||
+        track.status == TrackStatus.queued;
+    final failed = track.status == TrackStatus.error;
+
     // `select` evita reconstruir TODA a lista a cada mudança de player.
     final isCurrent = context.select<PlayerController, bool>(
       (p) => p.current?.id == track.id,
@@ -36,11 +40,47 @@ class TrackTile extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-        onTap: () =>
-            context.read<PlayerController>().playTrack(track, queue: queue),
-        leading: CoverArt(
-          url: track.coverUrl ?? track.thumbnailUrl,
-          trackId: track.id,
+        onTap: () => _onTap(context, downloading, failed),
+        leading: Stack(
+          alignment: Alignment.center,
+          children: [
+            CoverArt(
+              url: track.coverUrl ?? track.thumbnailUrl,
+              trackId: track.id,
+            ),
+            if (downloading) ...[
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.55),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+              SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(
+                  value: track.progress > 0
+                      ? (track.progress / 100).clamp(0.0, 1.0).toDouble()
+                      : null,
+                  strokeWidth: 2.5,
+                  color: scheme.primary,
+                ),
+              ),
+            ],
+            if (failed)
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.5),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(Icons.error_outline_rounded,
+                      color: scheme.error, size: 22),
+                ),
+              ),
+          ],
         ),
         title: Text(
           track.title,
@@ -52,40 +92,79 @@ class TrackTile extends StatelessWidget {
           ),
         ),
         subtitle: Text(
-          '${track.artist} • ${formatDuration(track.duration)}',
+          _subtitle(),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant),
+          style: TextStyle(
+            fontSize: 12.5,
+            color: failed ? scheme.error : scheme.onSurfaceVariant,
+          ),
         ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            IconButton.filledTonal(
-              tooltip: isPlaying ? 'Pausar' : 'Reproduzir',
-              onPressed: () =>
-                  context.read<PlayerController>().playTrack(track, queue: queue),
-              icon: Icon(
-                isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-              ),
-            ),
-            PopupMenuButton<_TrackAction>(
-              tooltip: 'Opções',
-              onSelected: (action) => _handleAction(context, action),
-              itemBuilder: (_) => const [
-                PopupMenuItem(
-                  value: _TrackAction.play,
-                  child: Text('Reproduzir'),
-                ),
-                PopupMenuItem(
-                  value: _TrackAction.delete,
-                  child: Text('Excluir'),
-                ),
-              ],
-            ),
-          ],
-        ),
+        trailing: _trailing(context, scheme, downloading, failed, isPlaying),
       ),
     );
+  }
+
+  Widget _trailing(
+    BuildContext context,
+    ColorScheme scheme,
+    bool downloading,
+    bool failed,
+    bool isPlaying,
+  ) {
+    if (downloading) {
+      return Text(
+        '${track.progress.round()}%',
+        style: TextStyle(color: scheme.primary, fontWeight: FontWeight.w600),
+      );
+    }
+    if (failed) {
+      return IconButton(
+        tooltip: 'Dispensar',
+        onPressed: () => context.read<LibraryController>().dismissFailed(track.id),
+        icon: Icon(Icons.close_rounded, color: scheme.onSurfaceVariant),
+      );
+    }
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        IconButton.filledTonal(
+          tooltip: isPlaying ? 'Pausar' : 'Reproduzir',
+          onPressed: () =>
+              context.read<PlayerController>().playTrack(track, queue: queue),
+          icon: Icon(isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded),
+        ),
+        PopupMenuButton<_TrackAction>(
+          tooltip: 'Opções',
+          onSelected: (action) => _handleAction(context, action),
+          itemBuilder: (_) => const [
+            PopupMenuItem(value: _TrackAction.play, child: Text('Reproduzir')),
+            PopupMenuItem(value: _TrackAction.delete, child: Text('Excluir')),
+          ],
+        ),
+      ],
+    );
+  }
+
+  String _subtitle() {
+    return switch (track.status) {
+      TrackStatus.error => track.error ?? 'Falha no download.',
+      TrackStatus.queued => 'Na fila…',
+      TrackStatus.downloading => 'Baixando • ${track.progress.round()}%',
+      TrackStatus.ready =>
+        '${track.artist} • ${formatDuration(track.duration)}',
+    };
+  }
+
+  void _onTap(BuildContext context, bool downloading, bool failed) {
+    if (downloading) return;
+    if (failed) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(track.error ?? 'Falha no download.')),
+      );
+      return;
+    }
+    context.read<PlayerController>().playTrack(track, queue: queue);
   }
 
   Future<void> _handleAction(BuildContext context, _TrackAction action) async {

@@ -11,6 +11,8 @@ class OfflineStore {
   String? audioPath(String id) => null;
   String? coverPath(String id) => null;
 
+  Future<void> setDurationIfMissing(String id, int seconds) async {}
+
   Future<void> remove(String id) async {}
 
   Future<Track> downloadFromYoutube(
