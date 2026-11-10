@@ -3,17 +3,14 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../controllers/download_controller.dart';
-import '../data/music_api.dart';
 import 'local_image.dart';
 
-/// Resolve a URL de capa para exibição, aplicando a regra do web:
-/// thumbnails do YouTube (ytimg.com) não têm CORS, então no web caem no
-/// placeholder até a capa local do servidor ficar pronta.
-String? resolveCoverUrl(BuildContext context, String? url) {
-  final api = context.read<MusicApi>();
-  final effective =
-      kIsWeb && (url?.contains('ytimg.com') ?? false) ? null : url;
-  return api.absoluteUrl(effective);
+/// Resolve a URL de capa para exibição. As thumbnails do YouTube (ytimg.com)
+/// não têm CORS, então no web caem no placeholder; no app usamos a capa local.
+String? resolveCoverUrl(String? url) {
+  if (url == null || url.isEmpty) return null;
+  if (kIsWeb && url.contains('ytimg.com')) return null;
+  return url;
 }
 
 class CoverArt extends StatelessWidget {
@@ -35,20 +32,17 @@ class CoverArt extends StatelessWidget {
   final Object? heroTag;
   final double elevation;
 
-  /// Se informado e a faixa estiver baixada, usa a capa LOCAL (funciona
-  /// offline, sem depender do servidor).
+  /// Se informado e a faixa estiver baixada, usa a capa LOCAL (offline).
   final String? trackId;
 
   @override
   Widget build(BuildContext context) {
-    final api = context.read<MusicApi>();
-    final absolute = resolveCoverUrl(context, url);
+    final absolute = resolveCoverUrl(url);
     final localProvider = trackId == null
         ? null
         : localImage(context.read<DownloadController>().localCoverPath(trackId!));
 
-    // Decodifica a imagem no tamanho de exibição (evita decodificar 1280px
-    // para caber em 50px — grande ganho de memória/fluidez).
+    // Decodifica a imagem no tamanho de exibição (economia de memória).
     final dpr = MediaQuery.devicePixelRatioOf(context);
     final cachePx = size.isFinite ? (size * dpr).round() : null;
 
@@ -68,29 +62,28 @@ class CoverArt extends StatelessWidget {
                 errorBuilder: (_, _, _) => _Placeholder(loading: loading),
               )
             : absolute == null
-            ? _Placeholder(loading: loading)
-            : Image.network(
-                absolute,
-                headers: api.authHeaders.isEmpty ? null : api.authHeaders,
-                fit: BoxFit.cover,
-                gaplessPlayback: true,
-                cacheWidth: cachePx,
-                cacheHeight: cachePx,
-                errorBuilder: (_, _, _) => _Placeholder(loading: loading),
-                frameBuilder: (context, child, frame, wasSync) {
-                  if (wasSync) return child;
-                  return AnimatedOpacity(
-                    opacity: frame == null ? 0 : 1,
-                    duration: const Duration(milliseconds: 350),
-                    curve: Curves.easeOut,
-                    child: child,
-                  );
-                },
-                loadingBuilder: (context, child, progress) {
-                  if (progress == null) return child;
-                  return const _Placeholder(loading: true);
-                },
-              ),
+                ? _Placeholder(loading: loading)
+                : Image.network(
+                    absolute,
+                    fit: BoxFit.cover,
+                    gaplessPlayback: true,
+                    cacheWidth: cachePx,
+                    cacheHeight: cachePx,
+                    errorBuilder: (_, _, _) => _Placeholder(loading: loading),
+                    frameBuilder: (context, child, frame, wasSync) {
+                      if (wasSync) return child;
+                      return AnimatedOpacity(
+                        opacity: frame == null ? 0 : 1,
+                        duration: const Duration(milliseconds: 350),
+                        curve: Curves.easeOut,
+                        child: child,
+                      );
+                    },
+                    loadingBuilder: (context, child, progress) {
+                      if (progress == null) return child;
+                      return const _Placeholder(loading: true);
+                    },
+                  ),
       ),
     );
 

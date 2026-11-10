@@ -5,79 +5,40 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
-import 'music_api.dart';
 import 'track.dart';
 
 const _audioExts = ['mp3', 'm4a', 'webm', 'opus', 'mp4', 'ogg'];
 
 /// Armazena faixas baixadas no dispositivo (áudio + capa) e um índice de
-/// metadados em JSON, permitindo tocar e navegar offline.
+/// metadados em JSON, permitindo tocar e navegar 100% offline.
 ///
-/// Layout em getApplicationDocumentsDirectory()/vynil:
-///   `music/<id>.mp3`
+/// Layout em getApplicationDocumentsDirectory()/vynil/_default:
+///   `music/<id>.<ext>`
 ///   `covers/<id>.jpg`
 ///   `library.json`  (lista de Track em JSON)
 class OfflineStore {
   Directory? _base;
-  String _userId = '';
   final Map<String, Track> _index = {};
-  final List<Track> _catalog = [];
 
-  /// Inicializa o armazenamento isolado para [userId]. Reinicializa se o
-  /// usuário mudar (cada um tem sua própria pasta/catálogo).
+  /// Inicializa o armazenamento local. Sem backend/usuários, há uma única
+  /// biblioteca (namespace `_default`).
   Future<void> init([String userId = '_default']) async {
-    final uid = userId.isEmpty ? '_default' : userId;
-    if (_base != null && _userId == uid) return;
-    _userId = uid;
-    _index.clear();
-    _catalog.clear();
+    if (_base != null) return;
     final dir = await getApplicationDocumentsDirectory();
-    final safe = uid.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
-    final base = Directory('${dir.path}/vynil/$safe');
+    final base = Directory('${dir.path}/vynil/_default');
     await Directory('${base.path}/music').create(recursive: true);
     await Directory('${base.path}/covers').create(recursive: true);
     _base = base;
     await _loadIndex();
-    await _loadCatalog();
   }
 
-  /// Garante que há uma base inicializada antes de gravar. Se nada chamou
-  /// [init] com o usuário ainda, usa o namespace padrão.
   Future<void> _ensureBase() async {
-    if (_base == null) await init(_userId);
+    if (_base == null) await init();
   }
 
   String get _musicDir => '${_base!.path}/music';
   String get _coversDir => '${_base!.path}/covers';
   File get _indexFile => File('${_base!.path}/library.json');
-  File get _catalogFile => File('${_base!.path}/catalog.json');
-
-  /// Catálogo completo (última biblioteca vista no servidor), usado para
-  /// mostrar TODAS as faixas quando offline.
-  List<Track> get catalog => List.unmodifiable(_catalog);
-
-  Future<void> saveCatalog(List<Track> tracks) async {
-    await _ensureBase();
-    _catalog
-      ..clear()
-      ..addAll(tracks);
-    try {
-      await _catalogFile
-          .writeAsString(jsonEncode(tracks.map((t) => t.toJson()).toList()));
-    } catch (_) {}
-  }
-
-  Future<void> _loadCatalog() async {
-    try {
-      if (!await _catalogFile.exists()) return;
-      final raw = jsonDecode(await _catalogFile.readAsString());
-      if (raw is! List) return;
-      _catalog.clear();
-      for (final item in raw) {
-        if (item is Map<String, dynamic>) _catalog.add(Track.fromJson(item));
-      }
-    } catch (_) {}
-  }
 
   Future<void> _loadIndex() async {
     try {
@@ -126,65 +87,6 @@ class OfflineStore {
     return File(path).existsSync() ? path : null;
   }
 
-  Future<void> download({
-    required Track track,
-    required MusicApi api,
-    void Function(double progress)? onProgress,
-  }) async {
-    await _ensureBase();
-    final streamUrl = api.absoluteUrl(track.streamUrl);
-    if (streamUrl == null) {
-      throw Exception('Faixa ainda não está pronta para download.');
-    }
-
-    final audioFile = File('$_musicDir/${track.id}.mp3');
-    final tmp = File('${audioFile.path}.part');
-    final client = http.Client();
-    try {
-      final request = http.Request('GET', Uri.parse(streamUrl))
-        ..headers.addAll(api.authHeaders);
-      final response = await client.send(request);
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw Exception('Falha ao baixar (HTTP ${response.statusCode}).');
-      }
-      final total = response.contentLength ?? 0;
-      final sink = tmp.openWrite();
-      var received = 0;
-      await for (final chunk in response.stream) {
-        sink.add(chunk);
-        received += chunk.length;
-        if (total > 0) onProgress?.call((received / total).clamp(0.0, 1.0));
-      }
-      await sink.close();
-      await tmp.rename(audioFile.path);
-
-      // Capa (best-effort; falha não impede o áudio).
-      final coverUrl = api.absoluteUrl(track.coverUrl);
-      if (coverUrl != null) {
-        try {
-          final cover =
-              await client.get(Uri.parse(coverUrl), headers: api.authHeaders);
-          if (cover.statusCode == 200) {
-            await File('$_coversDir/${track.id}.jpg')
-                .writeAsBytes(cover.bodyBytes);
-          }
-        } catch (_) {}
-      }
-    } catch (e) {
-      if (await tmp.exists()) {
-        try {
-          await tmp.delete();
-        } catch (_) {}
-      }
-      rethrow;
-    } finally {
-      client.close();
-    }
-
-    _index[track.id] = track;
-    await _saveIndex();
-  }
-
   Future<void> remove(String id) async {
     await _ensureBase();
     for (final ext in _audioExts) {
@@ -200,8 +102,8 @@ class OfflineStore {
     await _saveIndex();
   }
 
-  /// Baixa um vídeo do YouTube DIRETO no dispositivo (sem o backend), usando
-  /// youtube_explode. Salva o áudio + capa e registra a faixa como `localOnly`.
+  /// Baixa um vídeo do YouTube DIRETO no dispositivo, usando youtube_explode.
+  /// Salva o áudio + capa e registra a faixa como `localOnly`.
   Future<Track> downloadFromYoutube(
     String videoUrl, {
     void Function(double progress)? onProgress,
@@ -211,8 +113,7 @@ class OfflineStore {
     try {
       final video = await yt.videos.get(videoUrl);
       final id = 'local-${video.id.value}';
-      final manifest =
-          await yt.videos.streamsClient.getManifest(video.id);
+      final manifest = await yt.videos.streamsClient.getManifest(video.id);
       final audio = manifest.audioOnly.withHighestBitrate();
       final ext = audio.container.name;
 

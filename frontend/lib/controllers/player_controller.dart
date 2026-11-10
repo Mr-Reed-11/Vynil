@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 
-import '../data/music_api.dart';
 import '../data/offline_store.dart';
 import '../data/track.dart';
 
@@ -18,7 +17,7 @@ enum PlayMode { sequential, shuffle }
 /// com o just_audio_background. A posição é publicada via [positionListenable]
 /// (ValueNotifier) para não reconstruir a lista a cada tick.
 class PlayerController extends ChangeNotifier {
-  PlayerController(this._api, this._store) {
+  PlayerController(this._store) {
     _subscriptions.add(
       _player.playerStateStream.listen((state) {
         _playing = state.playing;
@@ -56,7 +55,6 @@ class PlayerController extends ChangeNotifier {
     );
   }
 
-  final MusicApi _api;
   final OfflineStore _store;
   final AudioPlayer _player = AudioPlayer();
   final List<StreamSubscription<dynamic>> _subscriptions = [];
@@ -82,7 +80,7 @@ class PlayerController extends ChangeNotifier {
   PlayMode get mode => _shuffle ? PlayMode.shuffle : PlayMode.sequential;
   bool get hasQueue => _queue.length > 1;
 
-  bool _playable(Track t) => t.isReady || _store.audioPath(t.id) != null;
+  bool _playable(Track t) => _store.audioPath(t.id) != null;
 
   Future<void> playTrack(Track track, {List<Track>? queue}) async {
     if (!_playable(track)) return;
@@ -140,9 +138,8 @@ class PlayerController extends ChangeNotifier {
     Uri? artUri;
     if (localCover != null) {
       artUri = Uri.file(localCover);
-    } else {
-      final art = _api.artworkUrl(track.coverUrl) ?? track.thumbnailUrl;
-      if (art != null) artUri = Uri.tryParse(art);
+    } else if (track.thumbnailUrl != null) {
+      artUri = Uri.tryParse(track.thumbnailUrl!);
     }
 
     final mediaItem = MediaItem(
@@ -156,18 +153,10 @@ class PlayerController extends ChangeNotifier {
       artUri: artUri,
     );
 
-    if (localAudio != null) {
-      return AudioSource.uri(Uri.file(localAudio), tag: mediaItem);
+    if (localAudio == null) {
+      throw StateError('Faixa sem arquivo local.');
     }
-    final url = _api.absoluteUrl(track.streamUrl);
-    if (url == null) {
-      throw StateError('Faixa sem URL de stream.');
-    }
-    return AudioSource.uri(
-      Uri.parse(url),
-      headers: _api.authHeaders.isEmpty ? null : _api.authHeaders,
-      tag: mediaItem,
-    );
+    return AudioSource.uri(Uri.file(localAudio), tag: mediaItem);
   }
 
   Future<void> toggle() async {

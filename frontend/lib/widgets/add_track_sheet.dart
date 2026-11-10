@@ -14,8 +14,7 @@ class AddTrackSheet extends StatefulWidget {
 class _AddTrackSheetState extends State<AddTrackSheet> {
   final TextEditingController _controller = TextEditingController();
   bool _loading = false;
-  bool _direct = false; // qual ação está rodando (direto x servidor)
-  double _directProgress = 0;
+  double _progress = 0;
   String? _error;
 
   @override
@@ -24,8 +23,6 @@ class _AddTrackSheetState extends State<AddTrackSheet> {
     super.dispose();
   }
 
-  /// Playlist "pura": link /playlist?list=... ou com list= e sem vídeo (v=).
-  /// `watch?v=X&list=Y` é tratado como vídeo único.
   bool _looksLikePlaylist(String url) {
     final uri = Uri.tryParse(url);
     if (uri == null) return false;
@@ -34,48 +31,8 @@ class _AddTrackSheetState extends State<AddTrackSheet> {
     return hasList && (uri.path.contains('playlist') || !hasVideo);
   }
 
-  Future<void> _submit() async {
-    final url = _controller.text.trim();
-    if (url.isEmpty) {
-      setState(() => _error = 'Cole o link do vídeo.');
-      return;
-    }
-
-    FocusScope.of(context).unfocus();
-    final library = context.read<LibraryController>();
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-
-    try {
-      final String message;
-      if (_looksLikePlaylist(url)) {
-        final r = await library.addPlaylist(url);
-        final extra = r.skipped > 0 ? ' (${r.skipped} já existiam)' : '';
-        message = 'Playlist "${r.playlistTitle}": '
-            '${r.added} adicionada(s)$extra.';
-      } else {
-        final track = await library.add(url);
-        message = '"${track.title}" adicionada à fila.';
-      }
-      if (!mounted) {
-        return;
-      }
-      Navigator.of(context).pop(message);
-    } catch (error) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _loading = false;
-        _error = error.toString();
-      });
-    }
-  }
-
-  /// Baixa direto no dispositivo (sem o backend) — só vídeo único.
-  Future<void> _downloadDirect() async {
+  /// Baixa o vídeo direto no dispositivo (sem backend).
+  Future<void> _download() async {
     final url = _controller.text.trim();
     if (url.isEmpty) {
       setState(() => _error = 'Cole o link do vídeo.');
@@ -83,7 +40,7 @@ class _AddTrackSheetState extends State<AddTrackSheet> {
     }
     if (_looksLikePlaylist(url)) {
       setState(() =>
-          _error = 'Download direto é só para vídeo único (não playlist).');
+          _error = 'Por enquanto só vídeo único (cole um link de vídeo).');
       return;
     }
 
@@ -91,8 +48,7 @@ class _AddTrackSheetState extends State<AddTrackSheet> {
     final library = context.read<LibraryController>();
     setState(() {
       _loading = true;
-      _direct = true;
-      _directProgress = 0;
+      _progress = 0;
       _error = null;
     });
 
@@ -100,7 +56,7 @@ class _AddTrackSheetState extends State<AddTrackSheet> {
       final track = await library.downloadFromYoutube(
         url,
         onProgress: (p) {
-          if (mounted) setState(() => _directProgress = p);
+          if (mounted) setState(() => _progress = p);
         },
       );
       if (!mounted) return;
@@ -109,7 +65,6 @@ class _AddTrackSheetState extends State<AddTrackSheet> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _direct = false;
         _error = error.toString();
       });
     }
@@ -153,8 +108,8 @@ class _AddTrackSheetState extends State<AddTrackSheet> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Cole um link do YouTube. "Servidor" envia pro backend (vídeo ou '
-              'playlist). "No dispositivo" baixa direto aqui, sem backend.',
+              'Cole um link do YouTube. A música é baixada direto no seu '
+              'dispositivo e fica disponível offline.',
               style: TextStyle(color: scheme.onSurfaceVariant),
             ),
             const SizedBox(height: 16),
@@ -164,7 +119,7 @@ class _AddTrackSheetState extends State<AddTrackSheet> {
               enabled: !_loading,
               textInputAction: TextInputAction.go,
               keyboardType: TextInputType.url,
-              onSubmitted: (_) => _submit(),
+              onSubmitted: (_) => _download(),
               decoration: InputDecoration(
                 hintText: 'https://www.youtube.com/watch?v=...',
                 errorText: _error,
@@ -176,15 +131,15 @@ class _AddTrackSheetState extends State<AddTrackSheet> {
                 ),
               ),
             ),
-            if (_direct && _loading) ...[
+            if (_loading) ...[
               const SizedBox(height: 16),
               LinearProgressIndicator(
-                value: _directProgress > 0 ? _directProgress : null,
+                value: _progress > 0 ? _progress : null,
               ),
               const SizedBox(height: 6),
               Text(
                 'Baixando no dispositivo... '
-                '${(_directProgress * 100).toStringAsFixed(0)}%',
+                '${(_progress * 100).toStringAsFixed(0)}%',
                 style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
               ),
             ],
@@ -201,27 +156,18 @@ class _AddTrackSheetState extends State<AddTrackSheet> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: FilledButton.icon(
-                    onPressed: _loading ? null : _submit,
-                    icon: (_loading && !_direct)
+                    onPressed: _loading ? null : _download,
+                    icon: _loading
                         ? const SizedBox(
                             width: 16,
                             height: 16,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Icon(Icons.cloud_upload_rounded),
-                    label: const Text('Servidor'),
+                        : const Icon(Icons.download_for_offline_rounded),
+                    label: const Text('Baixar'),
                   ),
                 ),
               ],
-            ),
-            const SizedBox(height: 10),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.tonalIcon(
-                onPressed: _loading ? null : _downloadDirect,
-                icon: const Icon(Icons.download_for_offline_rounded),
-                label: const Text('Baixar no dispositivo'),
-              ),
             ),
           ],
         ),

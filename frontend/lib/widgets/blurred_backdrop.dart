@@ -1,10 +1,8 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 
 import '../core/theme.dart';
-import '../data/music_api.dart';
 import 'cover_art.dart';
 
 /// Fundo imersivo: a capa ampliada e borrada, com um scrim escuro por cima
@@ -23,8 +21,7 @@ class BlurredBackdrop extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final api = context.read<MusicApi>();
-    final absolute = resolveCoverUrl(context, url);
+    final absolute = resolveCoverUrl(url);
 
     return Stack(
       fit: StackFit.expand,
@@ -51,7 +48,6 @@ class BlurredBackdrop extends StatelessWidget {
                       fit: BoxFit.cover,
                       width: double.infinity,
                       height: double.infinity,
-                      headers: api.authHeaders.isEmpty ? null : api.authHeaders,
                       errorBuilder: (_, _, _) => const SizedBox.shrink(),
                     ),
                   ),

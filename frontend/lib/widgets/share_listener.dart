@@ -66,25 +66,26 @@ class _ShareListenerState extends State<ShareListener> {
     final library = context.read<LibraryController>();
     final uri = Uri.tryParse(url);
 
+    if (uri != null && _looksLikePlaylist(uri)) {
+      messenger.showSnackBar(const SnackBar(
+        content: Text('Por enquanto só vídeo único (compartilhe um vídeo).'),
+      ));
+      return;
+    }
+
+    messenger.showSnackBar(const SnackBar(
+      content: Text('Baixando no dispositivo...'),
+    ));
     try {
-      if (uri != null && _looksLikePlaylist(uri)) {
-        final r = await library.addPlaylist(url);
-        if (!mounted) return;
-        messenger.showSnackBar(SnackBar(
-          content: Text('Playlist "${r.playlistTitle}": '
-              '${r.added} adicionada(s).'),
-        ));
-      } else {
-        final track = await library.add(url);
-        if (!mounted) return;
-        messenger.showSnackBar(
-          SnackBar(content: Text('"${track.title}" adicionada à fila.')),
-        );
-      }
+      final track = await library.downloadFromYoutube(url);
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(content: Text('"${track.title}" salva no dispositivo.')),
+      );
     } catch (error) {
       if (!mounted) return;
       messenger.showSnackBar(
-        SnackBar(content: Text('Falha ao adicionar o link: $error')),
+        SnackBar(content: Text('Falha ao baixar o link: $error')),
       );
     }
   }

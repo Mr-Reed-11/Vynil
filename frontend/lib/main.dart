@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:just_audio_background/just_audio_background.dart';
@@ -7,13 +9,10 @@ import 'package:provider/provider.dart';
 
 import 'app.dart';
 import 'core/diagnostics.dart';
-import 'controllers/auth_controller.dart';
 import 'controllers/download_controller.dart';
 import 'controllers/library_controller.dart';
 import 'controllers/player_controller.dart';
 import 'controllers/update_controller.dart';
-import 'core/app_config.dart';
-import 'data/music_api.dart';
 import 'data/offline_store.dart';
 
 Future<void> main() async {
@@ -38,47 +37,27 @@ Future<void> main() async {
     }
   }
 
-  // Obs: NÃO configuramos o AudioSession manualmente — o audio_service (base
-  // do just_audio_background) gerencia a sessão e a media session que aciona
-  // a notificação. Configurar por cima a desfazia (notificação não aparecia).
-
-  final api = MusicApi(baseUrl: AppConfig.apiBaseUrl);
-  final auth = await AuthController.load(api);
-
   final offlineStore = OfflineStore();
-  final library = LibraryController(api, offlineStore);
-  // Cada usuário tem seu namespace offline; com token salvo, inicializa já.
-  if (auth.isAuthenticated && auth.userId.isNotEmpty) {
-    try {
-      await offlineStore.init(auth.userId);
-    } catch (error) {
-      debugPrint('Falha ao iniciar o armazenamento offline: $error');
-    }
-    library.load();
+  final library = LibraryController(offlineStore);
+  // App standalone: inicializa o armazenamento local e carrega a biblioteca.
+  try {
+    await offlineStore.init();
+  } catch (error) {
+    debugPrint('Falha ao iniciar o armazenamento local: $error');
   }
-
-  auth.onAuthenticated = () {
-    // Login/cadastro concluído: troca o namespace offline e recarrega.
-    if (auth.userId.isNotEmpty) {
-      offlineStore.init(auth.userId).then((_) => library.load());
-    } else {
-      library.load();
-    }
-  };
+  unawaited(library.load());
 
   runApp(
     MultiProvider(
       providers: [
-        Provider<MusicApi>.value(value: api),
-        ChangeNotifierProvider<AuthController>.value(value: auth),
         ChangeNotifierProvider<LibraryController>.value(value: library),
         ChangeNotifierProvider(
-          create: (_) => PlayerController(api, offlineStore),
+          create: (_) => PlayerController(offlineStore),
         ),
         ChangeNotifierProvider(
-          create: (_) => DownloadController(api, offlineStore),
+          create: (_) => DownloadController(offlineStore),
         ),
-        ChangeNotifierProvider(create: (_) => UpdateController(api)),
+        ChangeNotifierProvider(create: (_) => UpdateController()),
       ],
       child: const MusicServerApp(),
     ),

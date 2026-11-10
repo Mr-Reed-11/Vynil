@@ -132,7 +132,6 @@ class LibraryScreen extends StatelessWidget {
     }
     if (library.tracks.isEmpty) {
       return _EmptyState(
-        serverUrl: library.serverUrl,
         onAdd: () => _openAddSheet(context),
       );
     }
@@ -268,9 +267,8 @@ class _ArtistsTab extends StatelessWidget {
 }
 
 class _EmptyState extends StatelessWidget {
-  const _EmptyState({required this.serverUrl, required this.onAdd});
+  const _EmptyState({required this.onAdd});
 
-  final String serverUrl;
   final VoidCallback onAdd;
 
   @override
@@ -319,15 +317,6 @@ class _EmptyState extends StatelessWidget {
             onPressed: onAdd,
             icon: const Icon(Icons.add_link_rounded),
             label: const Text('Adicionar música'),
-          ),
-          const SizedBox(height: 32),
-          Text(
-            'Servidor: $serverUrl',
-            style: TextStyle(
-              fontSize: 12,
-              color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
-            ),
-            textAlign: TextAlign.center,
           ),
         ],
       ),

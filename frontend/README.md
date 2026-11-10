@@ -1,111 +1,40 @@
-# Music Server — app Flutter
+# Vynil — app Flutter
 
-App para navegar na biblioteca do
-[music-server](../backend/README.md), adicionar links do YouTube, acompanhar o download
-e tocar as músicas direto do servidor.
+App de música que roda **100% no dispositivo**: você cola um link do YouTube,
+o próprio app baixa o áudio e a capa (via `youtube_explode_dart`) e toca
+offline, com notificação de mídia e controles. Sem servidor, sem login.
 
-## Funcionalidades
+## Recursos
 
-- Lista as faixas do servidor com capa, artista e duração.
-- Adiciona um link do YouTube (com botão para colar da área de transferência).
-- Atualiza o progresso automaticamente enquanto há downloads na fila.
-- Player com play/pause, seek, avançar/voltar 10 s e fechar.
-- Busca por título/artista, atualização por pull-to-refresh e exclusão de faixas.
-- Repetição de downloads com erro.
-
-## Requisitos
-
-- Flutter 3.47+ (Dart 3.13+). Neste ambiente: `~/.local/flutter/bin/flutter`.
-- Backend rodando (`cd ../backend && npm run start:dev`) em `http://localhost:3000`.
+- Baixa o áudio direto do YouTube no aparelho e salva localmente.
+- Biblioteca offline com capa, artista e duração.
+- Player com fila nativa (avançar/voltar), shuffle, fade na troca de faixa.
+- Notificação de mídia (bandeja/lockscreen) com capa e controles.
+- Compartilhar um vídeo do YouTube para o app já baixa.
+- Atualização automática via GitHub Releases (sideload do APK).
 
 ## Rodando
 
 ```bash
-cd frontend
 flutter pub get
-flutter run -d chrome      # web
-# ou
-flutter run                # dispositivo/emulador conectado
+flutter run
 ```
 
-O app escolhe a URL do backend automaticamente:
+## Build de release
 
-| Plataforma | URL padrão |
-| --- | --- |
-| Web / Linux / iOS Simulator | `http://localhost:3000` |
-| Emulador Android | `http://10.0.2.2:3000` |
-
-Para celular físico, use o IP da máquina na rede local:
+Use o `../release.sh` na raiz do repo (bump de versão + build arm64 + publicação
+no GitHub Releases). Para um APK avulso:
 
 ```bash
-flutter run --dart-define=API_BASE_URL=http://192.168.0.10:3000
+flutter build apk --release --split-per-abi
 ```
 
-Se o backend estiver com `APP_API_KEY` definida:
+## Armazenamento
 
-```bash
-flutter run --dart-define=API_KEY=minha-chave
-# combinando:
-flutter run \
-  --dart-define=API_BASE_URL=http://192.168.0.10:3000 \
-  --dart-define=API_KEY=minha-chave
-```
-
-## Build web
-
-```bash
-flutter build web --release
-# os arquivos ficam em build/web
-```
-
-Para gerar o web build já apontando para um servidor remoto:
-
-```bash
-flutter build web --release \
-  --dart-define=API_BASE_URL=http://192.168.0.10:3000
-```
-
-## Estrutura
+As faixas ficam em `getApplicationDocumentsDirectory()/vynil/_default`:
 
 ```
-lib/
-├── main.dart                 # providers + configuração de áudio
-├── app.dart                  # MaterialApp
-├── core/
-│   ├── app_config.dart       # URL do backend e API key
-│   ├── format.dart           # duração e tamanho
-│   └── theme.dart            # tema Material 3 escuro
-├── data/
-│   ├── track.dart            # modelo/status da faixa
-│   └── music_api.dart        # cliente HTTP da API
-├── controllers/
-│   ├── library_controller.dart  # lista, busca, polling, ações
-│   └── player_controller.dart   # just_audio
-├── screens/
-│   └── library_screen.dart
-└── widgets/
-    ├── add_track_sheet.dart
-    ├── cover_art.dart
-    ├── player_bar.dart
-    └── track_tile.dart
+music/<id>.<ext>     # áudio baixado
+covers/<id>.jpg      # capa
+library.json         # índice de metadados (lista de Track)
 ```
-
-## Validação
-
-```bash
-flutter analyze
-flutter test
-flutter build web --release
-```
-
-## Limitações atuais
-
-- Sem download offline no dispositivo (o áudio é sempre transmitido).
-- Sem reprodução em segundo plano/controles na notificação (`audio_service`).
-- `just_audio` não tem implementação oficial para Linux; priorize Android, iOS
-  ou web.
-- O Android usa `usesCleartextTraffic` e o iOS libera ATS **apenas para
-  desenvolvimento** com HTTP local. Em produção, sirva a API por HTTPS e remova
-  essas exceções.
-- Build Android/iOS não foi executado neste ambiente por falta do Android SDK /
-  Xcode; a compilação web foi validada.
