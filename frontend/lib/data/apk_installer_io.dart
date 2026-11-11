@@ -1,8 +1,10 @@
 import 'dart:io';
 
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
-import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
+
+const MethodChannel _installerChannel = MethodChannel('vynil/installer');
 
 /// Baixa o APK (com progresso) para um arquivo temporário e abre o instalador
 /// do Android. Requer a permissão REQUEST_INSTALL_PACKAGES no manifest e que o
@@ -39,11 +41,17 @@ Future<void> downloadAndInstallApk({
     client.close();
   }
 
-  final result = await OpenFilex.open(
-    file.path,
-    type: 'application/vnd.android.package-archive',
-  );
-  if (result.type != ResultType.done) {
-    throw Exception('Não foi possível abrir o instalador: ${result.message}');
+  // Abre o instalador do Android via intent nativa (FileProvider). Evita o
+  // plugin open_filex, que falhava ao registrar no AGP 9 (MissingPluginException).
+  try {
+    final ok = await _installerChannel.invokeMethod<bool>(
+      'installApk',
+      {'path': file.path},
+    );
+    if (ok != true) {
+      throw Exception('Não foi possível abrir o instalador.');
+    }
+  } on PlatformException catch (e) {
+    throw Exception('Não foi possível abrir o instalador: ${e.message}');
   }
 }
