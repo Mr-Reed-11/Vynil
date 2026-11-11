@@ -14,6 +14,9 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const KEY = (process.env.DOWNLOAD_KEY || '').trim();
 const TIMEOUT_MS = Number(process.env.DOWNLOAD_TIMEOUT_MS || 180000);
+// Arquivo de cookies do YouTube (Netscape). Em IP de datacenter o YouTube
+// exige login ("Sign in to confirm you're not a bot"); os cookies resolvem.
+const COOKIES_FILE = (process.env.COOKIES_FILE || '/cookies/cookies.txt').trim();
 
 const YT_RE =
   /^(https?:\/\/)?(www\.|m\.|music\.)?(youtube\.com|youtu\.be)\//i;
@@ -31,7 +34,8 @@ function checkKey(req, res, next) {
   next();
 }
 
-app.get('/health', (_req, res) => res.json({ ok: true }));
+app.get('/health', (_req, res) =>
+  res.json({ ok: true, cookies: fs.existsSync(COOKIES_FILE) }));
 
 // GET /download?url=<link do YouTube>&key=<chave>
 // -> stream do MP3, com metadados nos headers X-*.
@@ -51,8 +55,19 @@ app.get('/download', checkKey, (req, res) => {
     '--no-progress',
     '--write-info-json',
     '-o', outTmpl,
-    url,
   ];
+
+  // Se houver cookies, copia para uma cópia gravável (o yt-dlp pode reescrever)
+  // e passa com --cookies. Sem cookies, o YouTube bloqueia IP de datacenter.
+  if (fs.existsSync(COOKIES_FILE)) {
+    try {
+      const ck = path.join(dir, 'cookies.txt');
+      fs.copyFileSync(COOKIES_FILE, ck);
+      args.push('--cookies', ck);
+    } catch (_) {}
+  }
+
+  args.push(url);
 
   execFile(
     'yt-dlp',
