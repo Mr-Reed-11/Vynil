@@ -1,0 +1,25 @@
+services:
+  vynil-download:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      PORT: 3000
+      # Chave compartilhada: a MESMA vai nas Configurações do app.
+      DOWNLOAD_KEY: ${DOWNLOAD_KEY:?Defina DOWNLOAD_KEY}
+      DOWNLOAD_TIMEOUT_MS: ${DOWNLOAD_TIMEOUT_MS:-180000}
+    networks:
+      - web
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=web"
+      - "traefik.http.routers.vynil-download.rule=Host(`${VYNIL_HOST:-vynil.nortixcode.com.br}`)"
+      - "traefik.http.routers.vynil-download.entrypoints=websecure"
+      - "traefik.http.routers.vynil-download.tls=true"
+      - "traefik.http.routers.vynil-download.tls.certresolver=lets-encrypt"
+      - "traefik.http.services.vynil-download.loadbalancer.server.port=3000"
+    restart: unless-stopped
+
+networks:
+  web:
+    external: true
