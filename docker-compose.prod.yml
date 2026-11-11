@@ -8,12 +8,11 @@ services:
       # Chave compartilhada: a MESMA vai nas Configurações do app.
       DOWNLOAD_KEY: ${DOWNLOAD_KEY:?Defina DOWNLOAD_KEY}
       DOWNLOAD_TIMEOUT_MS: ${DOWNLOAD_TIMEOUT_MS:-180000}
-      COOKIES_FILE: /cookies/cookies.txt
-    volumes:
-      # Pasta na VPS com o cookies.txt do YouTube (Netscape). Necessário porque
-      # o YouTube exige login em IP de datacenter. Coloque o arquivo em
-      # ${COOKIES_DIR}/cookies.txt (padrão /opt/vynil/cookies.txt).
-      - ${COOKIES_DIR:-/opt/vynil}:/cookies:ro
+      # Cookies do YouTube (necessário em VPS). Jeito recomendado: cole o
+      # cookies.txt em base64 nesta variável da stack (fica no Portainer, NUNCA
+      # no repositório — é segredo da conta). Gere com:
+      #   base64 -w0 cookies.txt
+      YT_COOKIES_B64: ${YT_COOKIES_B64:-}
     networks:
       - web
     labels:

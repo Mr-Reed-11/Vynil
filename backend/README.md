@@ -36,21 +36,33 @@ No app: **Configurações → Servidor de download** → URL
 ## Cookies do YouTube (OBRIGATÓRIO em VPS)
 
 Em IP de datacenter o YouTube exige login ("Sign in to confirm you're not a
-bot"). Sem cookies, todo download dá 403. Então:
+bot"). Sem cookies, todo download dá 403. (Num servidor residencial — IP de
+casa — isso não acontece e os cookies são dispensáveis.)
 
-1. **Use uma conta YouTube descartável/secundária** (não a sua principal — a
-   atividade pode fazer o Google sinalizar/bloquear a conta).
-2. Num navegador logado nessa conta, exporte os cookies no formato Netscape
-   (`cookies.txt`) — ex.: extensão "Get cookies.txt LOCALLY", na página
+> ⚠️ **Cookies = acesso total à conta Google.** Use uma conta **descartável/
+> secundária**, nunca a principal. E **nunca** comite o `cookies.txt` no repo
+> (ainda mais sendo público) — é segredo, vai só na env da stack.
+
+1. Num navegador logado na conta descartável, exporte os cookies no formato
+   Netscape (`cookies.txt`) — ex.: extensão "Get cookies.txt LOCALLY" na página
    `youtube.com`. Dica: exporte numa aba anônima e feche sem usar, para os
-   cookies não serem rotacionados.
-3. Na VPS, coloque o arquivo em **`/opt/vynil/cookies.txt`** (ou ajuste
-   `COOKIES_DIR` na stack). O compose monta essa pasta como `/cookies:ro`.
-4. Redeploy. Confira: `curl https://vynil.nortixcode.com.br/health` deve
-   retornar `{"ok":true,"cookies":true}`.
+   cookies não rotacionarem.
+2. Gere o base64 (numa linha):
+   ```bash
+   base64 -w0 cookies.txt
+   ```
+3. No Portainer, na stack, defina a env **`YT_COOKIES_B64`** com esse base64.
+4. Redeploy. Confira:
+   ```bash
+   curl https://vynil.nortixcode.com.br/health   # -> {"ok":true,"cookies":true}
+   ```
+
+Alternativa (arquivo montado, se preferir): defina `COOKIES_FILE` e monte o
+`cookies.txt` nesse caminho via volume. O base64 na env é mais simples e não
+exige mexer em arquivos na VPS.
 
 Os cookies expiram de tempos em tempos — se os downloads voltarem a dar 403, é
-só reexportar e substituir o arquivo.
+só reexportar e atualizar a env.
 
 ### Rodar solto (sem Traefik), para testar
 

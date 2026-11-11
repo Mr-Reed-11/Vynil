@@ -18,6 +18,29 @@ const TIMEOUT_MS = Number(process.env.DOWNLOAD_TIMEOUT_MS || 180000);
 // exige login ("Sign in to confirm you're not a bot"); os cookies resolvem.
 const COOKIES_FILE = (process.env.COOKIES_FILE || '/cookies/cookies.txt').trim();
 
+// Resolve a fonte dos cookies: 1) variável YT_COOKIES_B64 (cookies.txt em
+// base64, definida na stack do Portainer — NUNCA no repositório, é segredo da
+// conta); 2) arquivo montado em COOKIES_FILE. Retorna o caminho do arquivo.
+let _cookiesPath = '';
+function initCookies() {
+  const b64 = (process.env.YT_COOKIES_B64 || '').trim();
+  if (b64) {
+    try {
+      const p = path.join(os.tmpdir(), 'yt-cookies.txt');
+      fs.writeFileSync(p, Buffer.from(b64, 'base64'));
+      _cookiesPath = p;
+      console.log('Cookies do YouTube carregados da variável YT_COOKIES_B64.');
+      return;
+    } catch (e) {
+      console.error('YT_COOKIES_B64 inválido:', e.message);
+    }
+  }
+  if (fs.existsSync(COOKIES_FILE)) {
+    _cookiesPath = COOKIES_FILE;
+    console.log(`Cookies do YouTube: ${COOKIES_FILE}`);
+  }
+}
+
 const YT_RE =
   /^(https?:\/\/)?(www\.|m\.|music\.)?(youtube\.com|youtu\.be)\//i;
 
@@ -35,7 +58,7 @@ function checkKey(req, res, next) {
 }
 
 app.get('/health', (_req, res) =>
-  res.json({ ok: true, cookies: fs.existsSync(COOKIES_FILE) }));
+  res.json({ ok: true, cookies: _cookiesPath !== '' }));
 
 // GET /download?url=<link do YouTube>&key=<chave>
 // -> stream do MP3, com metadados nos headers X-*.
@@ -59,10 +82,10 @@ app.get('/download', checkKey, (req, res) => {
 
   // Se houver cookies, copia para uma cópia gravável (o yt-dlp pode reescrever)
   // e passa com --cookies. Sem cookies, o YouTube bloqueia IP de datacenter.
-  if (fs.existsSync(COOKIES_FILE)) {
+  if (_cookiesPath && fs.existsSync(_cookiesPath)) {
     try {
       const ck = path.join(dir, 'cookies.txt');
-      fs.copyFileSync(COOKIES_FILE, ck);
+      fs.copyFileSync(_cookiesPath, ck);
       args.push('--cookies', ck);
     } catch (_) {}
   }
@@ -119,7 +142,9 @@ app.get('/download', checkKey, (req, res) => {
   );
 });
 
+initCookies();
 app.listen(PORT, () => {
   console.log(`Vynil download server ouvindo na porta ${PORT}` +
-    (KEY ? ' (com chave)' : ' (sem chave — defina DOWNLOAD_KEY!)'));
+    (KEY ? ' (com chave)' : ' (sem chave — defina DOWNLOAD_KEY!)') +
+    (_cookiesPath ? ' (com cookies)' : ' (SEM cookies — 403 em VPS!)'));
 });
