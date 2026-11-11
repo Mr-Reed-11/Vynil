@@ -58,13 +58,19 @@ app.get('/download', checkKey, (req, res) => {
     'yt-dlp',
     args,
     { timeout: TIMEOUT_MS, maxBuffer: 1024 * 1024 * 16 },
-    (err) => {
+    (err, _stdout, stderr) => {
       const mp3 = path.join(dir, 'a.mp3');
       const infoPath = path.join(dir, 'a.info.json');
 
       if (err || !fs.existsSync(mp3)) {
         cleanup(dir);
-        const detail = String(err && err.message ? err.message : err).slice(0, 300);
+        // Prioriza as linhas ERROR: do yt-dlp (o motivo real); senão o stderr.
+        const errLines = String(stderr || '')
+          .split('\n')
+          .filter((l) => l.startsWith('ERROR'))
+          .join(' | ');
+        const detail = (errLines || String(stderr || err || '')).slice(0, 1200);
+        console.error('[download] falhou:', detail);
         return res
           .status(500)
           .json({ error: 'Falha ao baixar.', detail });
