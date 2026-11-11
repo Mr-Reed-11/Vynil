@@ -1,15 +1,49 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/offline_store.dart';
 import '../data/track.dart';
 
-/// Biblioteca 100% local (sem backend): lista as faixas baixadas no aparelho.
+/// Biblioteca local: lista as faixas salvas no aparelho e dispara o download
+/// (que passa pelo servidor de download configurado).
 class LibraryController extends ChangeNotifier {
   LibraryController(this._store);
 
   final OfflineStore _store;
+
+  static const _kServerUrl = 'download_server_url';
+  static const _kServerKey = 'download_server_key';
+
+  String _serverUrl = '';
+  String _serverKey = '';
+  bool _prefsLoaded = false;
+
+  String get serverUrl => _serverUrl;
+  String get serverKey => _serverKey;
+  bool get hasServer => _serverUrl.trim().isNotEmpty;
+
+  Future<void> _loadPrefs() async {
+    if (_prefsLoaded) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _serverUrl = prefs.getString(_kServerUrl) ?? '';
+      _serverKey = prefs.getString(_kServerKey) ?? '';
+    } catch (_) {}
+    _prefsLoaded = true;
+  }
+
+  Future<void> setServer(String url, String key) async {
+    _serverUrl = url.trim();
+    _serverKey = key.trim();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_kServerUrl, _serverUrl);
+      await prefs.setString(_kServerKey, _serverKey);
+    } catch (_) {}
+    _notify();
+  }
 
   List<Track> _tracks = const [];
   // Downloads em andamento (ou que falharam), exibidos no topo da lista.
@@ -43,6 +77,7 @@ class LibraryController extends ChangeNotifier {
       _notify();
     }
     try {
+      await _loadPrefs();
       await _store.init();
       _tracks = _applyQuery(_store.tracks);
       _error = null;
@@ -91,8 +126,11 @@ class LibraryController extends ChangeNotifier {
     _notify();
 
     try {
+      await _loadPrefs();
       final track = await _store.downloadFromYoutube(
         url,
+        serverUrl: _serverUrl,
+        serverKey: _serverKey,
         onProgress: (p) {
           final cur = _pending[tempId];
           if (cur != null) {

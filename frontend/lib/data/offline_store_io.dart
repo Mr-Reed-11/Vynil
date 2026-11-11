@@ -3,7 +3,6 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
-import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
 import 'track.dart';
 
@@ -20,8 +19,7 @@ class OfflineStore {
   Directory? _base;
   final Map<String, Track> _index = {};
 
-  /// Inicializa o armazenamento local. Sem backend/usuários, há uma única
-  /// biblioteca (namespace `_default`).
+  /// Inicializa o armazenamento local. Biblioteca única (namespace `_default`).
   Future<void> init([String userId = '_default']) async {
     if (_base != null) return;
     final dir = await getApplicationDocumentsDirectory();
@@ -49,14 +47,11 @@ class OfflineStore {
       for (final item in raw) {
         if (item is! Map<String, dynamic>) continue;
         final track = Track.fromJson(item);
-        // Só conta como baixada se o arquivo de áudio realmente existe.
         if (_audioFile(track.id) != null) {
           _index[track.id] = track;
         }
       }
-    } catch (_) {
-      // Índice corrompido: ignora (começa vazio).
-    }
+    } catch (_) {}
   }
 
   Future<void> _saveIndex() async {
@@ -69,7 +64,6 @@ class OfflineStore {
 
   bool isDownloaded(String id) => _index.containsKey(id);
 
-  /// Resolve o arquivo de áudio local (qualquer container suportado).
   File? _audioFile(String id) {
     if (_base == null) return null;
     for (final ext in _audioExts) {
@@ -87,8 +81,6 @@ class OfflineStore {
     return File(path).existsSync() ? path : null;
   }
 
-  /// Preenche a duração (em segundos) de uma faixa local que foi salva sem ela
-  /// (vem do player ao tocar pela primeira vez). Só grava se ainda estiver 0.
   Future<void> setDurationIfMissing(String id, int seconds) async {
     final t = _index[id];
     if (t == null || seconds <= 0 || t.durationSeconds > 0) return;
@@ -111,53 +103,59 @@ class OfflineStore {
     await _saveIndex();
   }
 
-  /// Baixa um vídeo do YouTube DIRETO no dispositivo, usando youtube_explode.
-  /// Salva o áudio + capa e registra a faixa como `localOnly`.
-  ///
-  /// Os metadados (título/artista) vêm do oEmbed (requisição leve), e o
-  /// manifesto de streams usa o caminho padrão da lib (via página /watch, que
-  /// decifra a assinatura e entrega URLs REALMENTE baixáveis no celular — os
-  /// clients de API entregam URLs "throttled" que travam o download). Isso
-  /// mantém só UMA requisição à /watch, reduzindo o risco de rate limit.
+  /// Baixa o MP3 de um link do YouTube a partir do servidor de download (que
+  /// usa yt-dlp) e salva no dispositivo. O app sozinho não extrai de forma
+  /// confiável (o YouTube bloqueia), por isso o download passa pelo servidor.
   Future<Track> downloadFromYoutube(
     String videoUrl, {
+    required String serverUrl,
+    String serverKey = '',
     void Function(double progress)? onProgress,
   }) async {
     await _ensureBase();
-    final yt = YoutubeExplode();
+
+    final base = serverUrl.trim().replaceAll(RegExp(r'/+$'), '');
+    if (base.isEmpty) {
+      throw Exception('Configure o servidor de download nas Configurações.');
+    }
+
+    final uri = Uri.parse('$base/download').replace(queryParameters: {
+      'url': videoUrl,
+      if (serverKey.trim().isNotEmpty) 'key': serverKey.trim(),
+    });
+
+    final client = http.Client();
     try {
-      final videoId = VideoId.fromString(videoUrl);
-      final id = 'local-${videoId.value}';
+      final response = await client
+          .send(http.Request('GET', uri))
+          .timeout(const Duration(seconds: 200));
 
-      final meta = await _fetchMeta(videoId);
-
-      final StreamManifest manifest;
-      try {
-        manifest = await yt.videos.streamsClient.getManifest(videoId);
-      } on RequestLimitExceededException {
-        throw Exception('O YouTube limitou os downloads deste aparelho '
-            'temporariamente. Aguarde alguns minutos e tente de novo.');
+      if (response.statusCode == 401) {
+        throw Exception('Chave do servidor inválida (confira nas Configurações).');
       }
-      final audio = manifest.audioOnly.withHighestBitrate();
-      final ext = audio.container.name;
+      if (response.statusCode != 200) {
+        final body = await response.stream.bytesToString();
+        throw Exception('Servidor: ${_errorFrom(body, response.statusCode)}');
+      }
 
-      final file = File('$_musicDir/$id.$ext');
+      final h = response.headers;
+      final videoId = (h['x-video-id']?.trim().isNotEmpty ?? false)
+          ? h['x-video-id']!.trim()
+          : (_extractVideoId(videoUrl) ?? 'desconhecido');
+      final id = 'local-$videoId';
+      final title = _decode(h['x-title']) ?? videoId;
+      final artist = _decode(h['x-artist']) ?? '';
+      final duration = int.tryParse(h['x-duration'] ?? '') ?? 0;
+      final total = int.tryParse(h['content-length'] ?? '') ??
+          response.contentLength ??
+          0;
+
+      final file = File('$_musicDir/$id.mp3');
       final tmp = File('${file.path}.part');
-      final total = audio.size.totalBytes;
-
       final sink = tmp.openWrite();
       var received = 0;
       try {
-        // Timeout de inatividade: se o YouTube "throttlar" e parar de enviar
-        // dados por 30s, aborta em vez de travar o download pra sempre.
-        final stream = yt.videos.streamsClient.get(audio).timeout(
-          const Duration(seconds: 30),
-          onTimeout: (eventSink) => eventSink.addError(
-            Exception('Download travou (sem resposta do YouTube). '
-                'Tente de novo em alguns minutos.'),
-          ),
-        );
-        await for (final chunk in stream) {
+        await for (final chunk in response.stream) {
           sink.add(chunk);
           received += chunk.length;
           if (total > 0) onProgress?.call((received / total).clamp(0.0, 1.0));
@@ -168,64 +166,40 @@ class OfflineStore {
 
       // Limpa versões antigas (outras extensões) do mesmo id e efetiva.
       for (final e in _audioExts) {
-        if (e == ext) continue;
+        if (e == 'mp3') continue;
         final old = File('$_musicDir/$id.$e');
         if (await old.exists()) await old.delete();
       }
       await tmp.rename(file.path);
 
-      // Capa (best-effort): tenta maxres e cai para hqdefault.
-      await _saveCover(id, videoId.value);
+      await _saveCover(id, videoId);
 
       final track = Track(
         id: id,
-        youtubeId: videoId.value,
+        youtubeId: videoId,
         url: videoUrl,
-        title: meta.title,
-        artist: meta.author,
-        durationSeconds: 0,
+        title: title,
+        artist: artist,
+        durationSeconds: duration,
         status: TrackStatus.ready,
         progress: 100,
-        thumbnailUrl: 'https://i.ytimg.com/vi/${videoId.value}/hqdefault.jpg',
-        sizeBytes: total,
+        thumbnailUrl: 'https://i.ytimg.com/vi/$videoId/hqdefault.jpg',
+        sizeBytes: total > 0 ? total : received,
         localOnly: true,
       );
       _index[id] = track;
       await _saveIndex();
       return track;
     } finally {
-      yt.close();
+      client.close();
     }
-  }
-
-  /// Metadados (título/artista) via oEmbed — requisição leve, sem bater numa
-  /// segunda vez na página `/watch`. A duração fica a cargo do player (vem do
-  /// próprio arquivo ao tocar).
-  Future<_Meta> _fetchMeta(VideoId videoId) async {
-    var title = videoId.value;
-    var author = '';
-    try {
-      final res = await http.get(Uri.parse(
-        'https://www.youtube.com/oembed?format=json'
-        '&url=https://www.youtube.com/watch?v=${videoId.value}',
-      ));
-      if (res.statusCode == 200) {
-        final j = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
-        final t = (j['title'] as String?)?.trim();
-        if (t != null && t.isNotEmpty) title = t;
-        author = (j['author_name'] as String? ?? '')
-            .replaceAll(RegExp(r' - Topic$'), '')
-            .trim();
-      }
-    } catch (_) {}
-    return _Meta(title: title, author: author);
   }
 
   Future<void> _saveCover(String id, String videoId) async {
     for (final name in ['maxresdefault', 'hqdefault']) {
       try {
-        final res =
-            await http.get(Uri.parse('https://i.ytimg.com/vi/$videoId/$name.jpg'));
+        final res = await http
+            .get(Uri.parse('https://i.ytimg.com/vi/$videoId/$name.jpg'));
         if (res.statusCode == 200 && res.bodyBytes.isNotEmpty) {
           await File('$_coversDir/$id.jpg').writeAsBytes(res.bodyBytes);
           return;
@@ -233,11 +207,30 @@ class OfflineStore {
       } catch (_) {}
     }
   }
-}
 
-class _Meta {
-  _Meta({required this.title, required this.author});
+  String _errorFrom(String body, int status) {
+    try {
+      final j = jsonDecode(body);
+      if (j is Map && j['error'] != null) return j['error'].toString();
+    } catch (_) {}
+    return 'erro HTTP $status';
+  }
 
-  final String title;
-  final String author;
+  String? _decode(String? v) {
+    if (v == null || v.isEmpty) return null;
+    try {
+      return Uri.decodeComponent(v);
+    } catch (_) {
+      return v;
+    }
+  }
+
+  String? _extractVideoId(String url) {
+    final uri = Uri.tryParse(url.trim());
+    if (uri == null) return null;
+    final v = uri.queryParameters['v'];
+    if (v != null && RegExp(r'^[A-Za-z0-9_-]{11}$').hasMatch(v)) return v;
+    final m = RegExp(r'[A-Za-z0-9_-]{11}').firstMatch(url);
+    return m?.group(0);
+  }
 }

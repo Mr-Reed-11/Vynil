@@ -1,12 +1,49 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../controllers/library_controller.dart';
 import '../controllers/update_controller.dart';
 import '../core/theme.dart';
 import '../widgets/update_gate.dart';
 
-class SettingsScreen extends StatelessWidget {
+class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
+
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  late final TextEditingController _url;
+  late final TextEditingController _key;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final library = context.read<LibraryController>();
+    _url = TextEditingController(text: library.serverUrl);
+    _key = TextEditingController(text: library.serverKey);
+  }
+
+  @override
+  void dispose() {
+    _url.dispose();
+    _key.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final library = context.read<LibraryController>();
+    setState(() => _saving = true);
+    await library.setServer(_url.text, _key.text);
+    if (!mounted) return;
+    setState(() => _saving = false);
+    messenger.showSnackBar(
+      const SnackBar(content: Text('Servidor de download salvo.')),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -30,12 +67,47 @@ class SettingsScreen extends StatelessWidget {
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
                 children: [
-                  Text('Sobre', style: Theme.of(context).textTheme.titleMedium),
+                  Text('Servidor de download',
+                      style: Theme.of(context).textTheme.titleMedium),
                   const SizedBox(height: 8),
                   Text(
-                    'Vynil roda 100% no seu dispositivo: baixa as músicas do '
-                    'YouTube direto aqui e as toca offline. Sem servidor.',
+                    'Endereço do seu servidor (yt-dlp) que baixa as músicas. '
+                    'Ex.: http://SEU_IP:3000. A chave é a mesma do DOWNLOAD_KEY '
+                    'do servidor.',
                     style: TextStyle(color: scheme.onSurfaceVariant),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _url,
+                    enabled: !_saving,
+                    keyboardType: TextInputType.url,
+                    decoration: const InputDecoration(
+                      labelText: 'URL do servidor',
+                      hintText: 'http://123.45.67.89:3000',
+                      prefixIcon: Icon(Icons.dns_rounded),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _key,
+                    enabled: !_saving,
+                    obscureText: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Chave (DOWNLOAD_KEY)',
+                      prefixIcon: Icon(Icons.key_rounded),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  FilledButton.icon(
+                    onPressed: _saving ? null : _save,
+                    icon: _saving
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.save_rounded),
+                    label: Text(_saving ? 'Salvando...' : 'Salvar'),
                   ),
                   const SizedBox(height: 32),
                   const Divider(),
@@ -74,10 +146,8 @@ class _UpdateSection extends StatelessWidget {
             Text('Instalada: $current',
                 style: TextStyle(color: scheme.onSurfaceVariant)),
             if (latest != null)
-              Text(
-                'Disponível: ${latest.version}',
-                style: TextStyle(color: scheme.onSurfaceVariant),
-              ),
+              Text('Disponível: ${latest.version}',
+                  style: TextStyle(color: scheme.onSurfaceVariant)),
             const SizedBox(height: 12),
             if (update.updateAvailable)
               FilledButton.tonalIcon(

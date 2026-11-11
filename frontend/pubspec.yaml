@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.8.0+19
+version: 1.9.0+20
 
 environment:
   sdk: ^3.13.5
@@ -45,7 +45,6 @@ dependencies:
   path_provider: ^2.1.5
   receive_sharing_intent: 1.8.1
   permission_handler: ^11.3.1
-  youtube_explode_dart: ^3.1.0
 
 # Versão local do just_audio_background com um patch: remove o botão ■ (stop)
 # da notificação (o pacote original o fixa; não há como customizar via config).

@@ -1,0 +1,13 @@
+{
+  "name": "vynil-download-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Backend mínimo do Vynil: baixa áudio do YouTube (yt-dlp) e serve como MP3.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}

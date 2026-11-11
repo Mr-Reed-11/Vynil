@@ -1,0 +1,11 @@
+services:
+  vynil-download:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      # Chave compartilhada: o app precisa enviar a mesma. Defina no .env.
+      - DOWNLOAD_KEY=${DOWNLOAD_KEY:-}
+      - DOWNLOAD_TIMEOUT_MS=${DOWNLOAD_TIMEOUT_MS:-180000}
